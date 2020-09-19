@@ -1,0 +1,47 @@
+PROJECT(k4a_to_scan)
+CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
+
+SET(CMAKE_AUTOMOC ON)
+SET(CMAKE_AUTORCC ON)
+SET(CMAKE_AUTOUIC ON)
+
+SET(CMAKE_CXX_FLAGS "-march=native -Wall -Werror -g")
+set(CMAKE_CXX_STANDARD 14)
+
+IF(${CMAKE_BUILD_TYPE} MATCHES "Release")
+  MESSAGE(STATUS "Additional Flags for Release mode")
+  SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fopenmp -fno-builtin-malloc \
+      -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -O3 -DNDEBUG")
+  SET(BUILD_SPECIFIC_LIBRARIES "tcmalloc")
+ELSEIF(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+  MESSAGE(STATUS "Additional Flags for Debug mode")
+  SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g")
+  SET(BUILD_SPECIFIC_LIBRARIES "")
+ENDIF()
+
+MESSAGE(STATUS "SOURCE DIR: ${PROJECT_SOURCE_DIR}")
+
+FIND_PACKAGE(Lua51 REQUIRED)
+FIND_PACKAGE(Eigen3 REQUIRED)
+
+INCLUDE($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+ROSBUILD_INIT()
+SET(ROS_BUILD_STATIC_LIBS true)
+SET(ROS_BUILD_SHARED_LIBS false)
+
+SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
+SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+
+INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
+INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src)
+INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/shared)
+
+ADD_SUBDIRECTORY(src/shared)
+
+ROSBUILD_ADD_EXECUTABLE(k4a_to_scan
+    src/main.cc
+    src/k4a_image/KinectWrapper.cpp)
+ADD_DEPENDENCIES(k4a_to_scan rosbuild_precompile)
+TARGET_LINK_LIBRARIES(k4a_to_scan roslib roscpp pthread boost_system
+    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a
+    ${BUILD_SPECIFIC_LIBRARIES})

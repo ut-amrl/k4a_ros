@@ -1,0 +1,15 @@
+<package>
+  <description brief="k4a_scan">Kinect For Azure to LaserScan Converter</description>
+  <author>Maintained by Joydeep Biswas</author>
+  <license>MIT</license>
+  <review status="unreviewed" notes=""/>
+  <url>https://github.com/ut-amrl/k4a_to_scan</url>
+  <depend package="roscpp"/>
+  <depend package="std_msgs"/>
+  <depend package="geometry_msgs"/>
+  <depend package="nav_msgs"/>
+  <depend package="sensor_msgs"/>
+  <depend package="tf"/>
+  <depend package="amrl_msgs"/>
+  <depend package="rosbag"/>
+</package>
