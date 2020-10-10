@@ -1,59 +1,59 @@
 #include <stdio.h>
-#include "KinectWrapper.h"
-#include <k4arecord/playback.h>
+
 #include <cstdio>
 #include <cstdlib>
 
+#include "KinectWrapper.h"
+#include "k4a/k4a.hpp"
 
-KinectWrapper::KinectWrapper(uint8_t deviceIndex, K4ACaptureRecipient &kfr) :
-    _device(NULL), 
-    _config(K4A_DEVICE_CONFIG_INIT_DISABLE_ALL), 
-    _kfr(kfr) {
-  if (K4A_RESULT_SUCCEEDED != k4a_device_open(deviceIndex, &_device)) {
+KinectWrapper::KinectWrapper(uint8_t deviceIndex, K4ACaptureRecipient& kfr) :
+    device_(nullptr), recipient_(kfr) {
+  if (K4A_RESULT_SUCCEEDED != k4a_device_open(deviceIndex, &device_)) {
     fprintf(stderr, "ERROR: Unable to open Kinect device, aborting.\n");
     return;
   }
-  k4a_device_get_calibration(_device,
+
+  k4a_device_get_calibration(device_,
                              K4A_DEPTH_MODE_NFOV_UNBINNED,
                              K4A_COLOR_RESOLUTION_2160P, 
-                             &_calibration);
-  // cout << "found " << calibration.color_camera_calibration.intrinsics.parameter_count << " intrinsic params" << endl;
-  // cout << "cx: " << calibration.color_camera_calibration.intrinsics.parameters.param.cx << endl;
-  // cout << "cy: " << calibration.color_camera_calibration.intrinsics.parameters.param.cy << endl;
-  // cout << "fx: " << calibration.color_camera_calibration.intrinsics.parameters.param.fx << endl;
-  // cout << "fy: " << calibration.color_camera_calibration.intrinsics.parameters.param.fy << endl;
+                             &calibration_);
+  printf("found %d intrinsic params\n",
+      calibration_.color_camera_calibration.intrinsics.parameter_count);
+  printf("%f %f %f %f \n",
+      calibration_.color_camera_calibration.intrinsics.parameters.param.cx,
+      calibration_.color_camera_calibration.intrinsics.parameters.param.cy,
+      calibration_.color_camera_calibration.intrinsics.parameters.param.fx,
+      calibration_.color_camera_calibration.intrinsics.parameters.param.fy);
 
-  _config.camera_fps = K4A_FRAMES_PER_SECOND_30;
-  _config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  _config.color_resolution = K4A_COLOR_RESOLUTION_2160P;
-  _config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
-  _config.synchronized_images_only = true;
+  config_ = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+  config_.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  // config_.synchronized_images_only = true;
 
   // try to start cameras
-  if (K4A_RESULT_SUCCEEDED != k4a_device_start_cameras(_device, &_config)) {
-    k4a_device_close(_device);
+  if (K4A_RESULT_SUCCEEDED != k4a_device_start_cameras(device_, &config_)) {
+    k4a_device_close(device_);
     abort();
   }
 }
 
 KinectWrapper::~KinectWrapper() {
-  k4a_device_close(_device);
+  k4a_device_close(device_);
 }
 
 void KinectWrapper::capture() {
   k4a_capture_t capture = NULL;
-  switch (k4a_device_get_capture(_device, &capture, K4A_WAIT_INFINITE)) {
+  switch (k4a_device_get_capture(device_, &capture, K4A_WAIT_INFINITE)) {
     case K4A_WAIT_RESULT_SUCCEEDED: {
-      _kfr.receiveFrame(capture);
-      k4a_capture_release	(capture);
+      recipient_.receiveFrame(capture);
+      k4a_capture_release(capture);
     } break;
     case K4A_WAIT_RESULT_TIMEOUT: {
       printf("Timed out waiting for a capture\n");
-      k4a_device_close(_device);
+      k4a_device_close(device_);
     } break;
     case K4A_WAIT_RESULT_FAILED: {
         printf("Failed to read a capture\n");
-        k4a_device_close(_device);
+        k4a_device_close(device_);
     } break;
     default: {
       fprintf(stderr, "ERROR: Unexpected response from Kinect capture\n");
