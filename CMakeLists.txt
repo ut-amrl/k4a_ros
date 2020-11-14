@@ -40,7 +40,7 @@ ADD_SUBDIRECTORY(src/shared)
 
 ROSBUILD_ADD_EXECUTABLE(k4a_to_scan
     src/main.cc
-    src/k4a_image/KinectWrapper.cpp)
+    src/k4a_wrapper.cc)
 ADD_DEPENDENCIES(k4a_to_scan rosbuild_precompile)
 TARGET_LINK_LIBRARIES(k4a_to_scan roslib roscpp pthread boost_system
     ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags

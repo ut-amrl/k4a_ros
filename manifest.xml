@@ -1,9 +1,9 @@
 <package>
-  <description brief="k4a_scan">Kinect For Azure to LaserScan Converter</description>
+  <description brief="k4a_ros">Kinect For Azure ROS Driver</description>
   <author>Maintained by Joydeep Biswas</author>
   <license>MIT</license>
   <review status="unreviewed" notes=""/>
-  <url>https://github.com/ut-amrl/k4a_to_scan</url>
+  <url>https://github.com/ut-amrl/k4a_ros</url>
   <depend package="roscpp"/>
   <depend package="std_msgs"/>
   <depend package="geometry_msgs"/>
