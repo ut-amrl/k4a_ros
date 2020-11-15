@@ -23,6 +23,7 @@
 #include <k4a/k4a.hpp>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "eigen3/Eigen/Dense"
@@ -37,8 +38,13 @@
 
 #include "math/geometry.h"
 #include "k4a_wrapper.h"
+#include "util/helpers.h"
 #include "util/timer.h"
 
+
+#include "CImg.h"
+
+using std::string;
 using Eigen::Vector3f;
 using k4a_wrapper::K4AWrapper;
 
@@ -49,6 +55,7 @@ DEFINE_string(points_topic, "kinect_points", "Topic name for point cloud");
 DEFINE_string(frame_id, "kinect", "Frame ID");
 DEFINE_bool(depth, true, "Publish depth images");
 DEFINE_bool(points, true, "Publish point cloud");
+DEFINE_string(save_dir, "", "Directory to save files to");
 
 class K4ARosInterface : public K4AWrapper {
  public:
@@ -195,6 +202,38 @@ class K4ARosInterface : public K4AWrapper {
     if (FLAGS_points) PublishPointCloud(image);
   }
 
+  void SaveFiles(k4a_image_t color_image, k4a_image_t depth_image) {
+    static uint32_t file_count = 0;
+    const string color_file = StringPrintf("%s/%09d_color.png", 
+        FLAGS_save_dir.c_str(), file_count);
+    const string depth_file = StringPrintf("%s/%09d_depth.png", 
+        FLAGS_save_dir.c_str(), file_count);
+    const int w = calibration_.color_camera_calibration.resolution_width;
+    const int h = calibration_.color_camera_calibration.resolution_height;
+    const int n = w * h;
+    cimg_library::CImg<uint8_t> color_cimg(w, h, 1, 3);
+    cimg_library::CImg<uint16_t> depth_cimg(w, h, 1, 1);
+    uint16_t* depth_data = 
+        reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
+    uint32_t* rgb_data = 
+        reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
+    for (int i = 0; i < n; ++i) {
+      const int x = i % w;
+      const int y = i / w;
+      const uint32_t rgb = rgb_data[i];
+      const uint32_t r = (rgb & 0xFF0000) >> 16;
+      const uint32_t g = (rgb & 0xFF00) >> 8;
+      const uint32_t b = (rgb & 0xFF);
+      color_cimg(x, y, 0, 0) = r;
+      color_cimg(x, y, 0, 1) = g;
+      color_cimg(x, y, 0, 2) = b;
+      depth_cimg[i] = depth_data[i];
+    }
+    color_cimg.save_png(color_file.c_str());
+    depth_cimg.save_png(depth_file.c_str());
+    ++file_count;
+  }
+
   void RegisteredRGBDCallback(
         k4a_image_t color_image, k4a_image_t depth_image) override {
     if (FLAGS_v > 0) {
@@ -230,6 +269,7 @@ class K4ARosInterface : public K4AWrapper {
       ++iter_rgb;
     }
     cloud_publisher_.publish(cloud_msg_);
+    if (!FLAGS_save_dir.empty()) SaveFiles(color_image, depth_image);
   }
 
   void UnregisteredRGBDCallback(

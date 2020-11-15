@@ -43,5 +43,12 @@ ROSBUILD_ADD_EXECUTABLE(k4a_to_scan
     src/k4a_wrapper.cc)
 ADD_DEPENDENCIES(k4a_to_scan rosbuild_precompile)
 TARGET_LINK_LIBRARIES(k4a_to_scan roslib roscpp pthread boost_system
-    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags
+    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11
+    ${BUILD_SPECIFIC_LIBRARIES})
+
+ADD_EXECUTABLE(save_rgbd_images
+    src/save_rgbd_images.cc
+    src/k4a_wrapper.cc)
+TARGET_LINK_LIBRARIES(save_rgbd_images pthread
+    ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
