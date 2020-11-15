@@ -3,8 +3,8 @@ Azure Kinect to 2D scan converter
 
 ## Dependencies
 
-1. Microsoft Kinect For Azure SDK
-1. ROS
+1. [Microsoft Kinect For Azure SDK](https://docs.microsoft.com/en-us/azure/kinect-dk/sensor-sdk-download)
+1. [ROS](https://wiki.ros.org/Installation/)
 
 ## Compile
 
