@@ -38,11 +38,11 @@ INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/shared)
 
 ADD_SUBDIRECTORY(src/shared)
 
-ROSBUILD_ADD_EXECUTABLE(k4a_to_scan
-    src/main.cc
+ROSBUILD_ADD_EXECUTABLE(stream_pcl
+    src/stream_pcl.cc
     src/k4a_wrapper.cc)
-ADD_DEPENDENCIES(k4a_to_scan rosbuild_precompile)
-TARGET_LINK_LIBRARIES(k4a_to_scan roslib roscpp pthread boost_system
+ADD_DEPENDENCIES(stream_pcl rosbuild_precompile)
+TARGET_LINK_LIBRARIES(stream_pcl roslib roscpp pthread boost_system
     ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
