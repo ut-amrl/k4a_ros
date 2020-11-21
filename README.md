@@ -1,5 +1,5 @@
 # k4a_ros
-Azure Kinect to 2D scan converter
+Azure Kinect ROS drivers
 
 ## Dependencies
 
