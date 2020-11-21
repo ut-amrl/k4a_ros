@@ -52,3 +52,10 @@ ADD_EXECUTABLE(save_rgbd_images
 TARGET_LINK_LIBRARIES(save_rgbd_images pthread
     ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
+
+ADD_EXECUTABLE(get_calibration
+    src/get_calibration.cc
+    src/k4a_wrapper.cc)
+TARGET_LINK_LIBRARIES(get_calibration pthread
+    ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a gflags X11
+    ${BUILD_SPECIFIC_LIBRARIES})
