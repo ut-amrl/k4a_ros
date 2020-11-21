@@ -115,9 +115,45 @@ int main(int argc, char* argv[]) {
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
   config.synchronized_images_only = true;
   RGBDFileWriter interface(FLAGS_serial, config);
+  k4a_calibration_intrinsics_t color_calibration = 
+      interface.calibration_.color_camera_calibration.intrinsics;
+  printf("Color calibration type: %d\n"
+         "cx = %f\n"
+         "cy = %f\n"
+         "fx = %f\n"
+         "fy = %f\n"
+         "k1 = %f\n"
+         "k2 = %f\n"
+         "k3 = %f\n"
+         "k4 = %f\n"
+         "k5 = %f\n"
+         "k6 = %f\n"
+         "codx = %f\n"
+         "cody = %f\n"
+         "p2 = %f\n"
+         "p1 = %f\n"
+         "metric_radius = %f\n",
+         static_cast<int>(color_calibration.type),
+         color_calibration.parameters.param.cx,
+         color_calibration.parameters.param.cy,
+         color_calibration.parameters.param.fx,
+         color_calibration.parameters.param.fy,
+         color_calibration.parameters.param.k1,
+         color_calibration.parameters.param.k2,
+         color_calibration.parameters.param.k3,
+         color_calibration.parameters.param.k4,
+         color_calibration.parameters.param.k5,
+         color_calibration.parameters.param.k6,
+         color_calibration.parameters.param.codx,
+         color_calibration.parameters.param.cody,
+         color_calibration.parameters.param.p2,
+         color_calibration.parameters.param.p1,
+         color_calibration.parameters.param.metric_radius);
+         
   signal(SIGINT, SigIntHandler);
   while (run_) {
     interface.Capture();
+    Sleep(0.001);
   }
   return 0;
 }
