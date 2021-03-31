@@ -30,6 +30,7 @@
 #include "eigen3/Eigen/Geometry"
 #include "gflags/gflags.h"
 #include "glog/logging.h"
+#include "omp.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Image.h"
 #include "sensor_msgs/image_encodings.h"
@@ -42,7 +43,6 @@
 #include "util/helpers.h"
 #include "util/timer.h"
 
-
 #include "CImg.h"
 
 using std::string;
@@ -51,6 +51,8 @@ using Eigen::AngleAxisf;
 using Eigen::Translation3f;
 using Eigen::Vector3f;
 using k4a_wrapper::K4AWrapper;
+using cimg_library::CImg;
+using std::max;
 
 using namespace math_util;
 
@@ -71,16 +73,15 @@ CONFIG_FLOAT(tx, "translation.x");
 CONFIG_FLOAT(ty, "translation.y");
 CONFIG_FLOAT(tz, "translation.z");
 
-class K4ARosInterface : public K4AWrapper {
+class DepthToLidar : public K4AWrapper {
  public:
 
-  K4ARosInterface(
+  DepthToLidar(
       ros::NodeHandle& n, 
       const std::string& serial,
       const k4a_device_configuration_t& config)  :
       K4AWrapper(serial, config, true) {
-     
-    image_publisher_ = 
+    costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
     cloud_publisher_ = 
         n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
@@ -89,18 +90,14 @@ class K4ARosInterface : public K4AWrapper {
   }
 
   void InitMessages() {
-    image_msg_.header.seq = 0;
-    image_msg_.header.frame_id = CONFIG_frame_id;
-    cloud_msg_.header = image_msg_.header;
-    image_msg_.encoding = sensor_msgs::image_encodings::MONO16;
-    image_msg_.is_bigendian = false;
-    int width = calibration_.depth_camera_calibration.resolution_width;
-    int height = calibration_.depth_camera_calibration.resolution_height;
-    image_msg_.width = cloud_msg_.width = width;
-    image_msg_.height = cloud_msg_.height = height;
-    image_msg_.data.resize(width * height * sizeof(uint16_t));
-    image_msg_.step = width * sizeof(uint16_t);
+    costmap_msg_.header.seq = 0;
+    costmap_msg_.header.frame_id = CONFIG_frame_id;
+    cloud_msg_.header = costmap_msg_.header;
+    costmap_msg_.encoding = sensor_msgs::image_encodings::MONO8;
+    costmap_msg_.is_bigendian = false;
 
+    const int width = calibration_.color_camera_calibration.resolution_width;
+    const int height = calibration_.color_camera_calibration.resolution_height;
     cloud_msg_.fields.resize(4);
     cloud_msg_.point_step = 3 * sizeof(float) + sizeof(uint32_t);
     cloud_msg_.is_dense = false;
@@ -122,6 +119,8 @@ class K4ARosInterface : public K4AWrapper {
     cloud_msg_.fields[3].datatype = sensor_msgs::PointField::UINT32;
     cloud_msg_.fields[3].count = 1;
     cloud_msg_.data.resize(width * height * cloud_msg_.point_step);
+    cloud_msg_.width = width;
+    cloud_msg_.height = height;
   }
 
   void InitLookups() {
@@ -154,8 +153,64 @@ class K4ARosInterface : public K4AWrapper {
     }
   }
 
-  void PublishPointCloud(
-        k4a_image_t color_image, k4a_image_t depth_image) {
+  void PublishPointCloud() {
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg_, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg_, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg_, "z");
+    sensor_msgs::PointCloud2Iterator<uint32_t> iter_rgb(cloud_msg_, "rgb");
+    
+    const int width = calibration_.color_camera_calibration.resolution_width;
+    const int height = calibration_.color_camera_calibration.resolution_height;
+    const int num_pixels = width * height;
+    for (int idx = 0; idx < num_pixels; ++idx) {
+      *iter_x = points_[idx].x();
+      *iter_y = points_[idx].y();
+      *iter_z = points_[idx].z();
+      *iter_rgb = colors_[idx];;
+      ++iter_x;
+      ++iter_y;
+      ++iter_z;
+      ++iter_rgb;
+    }
+    cloud_publisher_.publish(cloud_msg_);
+  }
+
+  void UpdateCostmap() {
+    static CumulativeFunctionTimer ft(__FUNCTION__);
+    CumulativeFunctionTimer::Invocation invoke(&ft);
+    const int kSize = 400;
+    const float kResolution = 0.015;
+    costmap_ = CImg<float>(kSize, kSize, 1, 1, -1);
+    costmap_msg_.width = kSize;
+    costmap_msg_.height = kSize;
+    costmap_msg_.data.resize(kSize * kSize * sizeof(uint8_t));
+    costmap_msg_.step = kSize * sizeof(uint8_t);
+    for (const Vector3f& p : points_) {
+      if (!isfinite(p.x()) || !isfinite(p.y()) || !isfinite(p.z())) continue;
+      const int x = static_cast<int>(floor(p.x() / kResolution));
+      const int y = static_cast<int>(-floor(p.y() / kResolution)) + kSize / 2;
+      if (x < 0 || x >= kSize || y < 0 || y >= kSize) continue;
+      // printf("%d %d\n", x, y);
+      if (costmap_(x, y) < 0.0) {
+        costmap_(x, y) = p.z();
+      } else {
+        costmap_(x, y) = max<float>(costmap_(x, y), p.z());
+      }
+    }
+
+    for (int x = 0; x < kSize; ++x) {
+      for (int y = 0; y < kSize; ++y) {
+        const int idx = y * kSize + x;
+        // printf("%d %d %d\n", x, y, idx);
+        if (fabs(costmap_(x, y)) < 0.05) {
+          costmap_msg_.data[idx] = 0;
+        } else {
+          costmap_msg_.data[idx] = static_cast<uint8_t>(
+            std::min<float>(255.0, costmap_(x, y) / 0.0025));
+        }
+      }
+    }
+    costmap_publisher_.publish(costmap_msg_);
   }
 
   void RegisteredRGBDCallback(
@@ -171,14 +226,8 @@ class K4ARosInterface : public K4AWrapper {
         reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
     const int num_pixels = width * height;
     CHECK_EQ(num_pixels, static_cast<int>(rgbd_ray_lookup_.size()));
-    Vector3f p;
-    cloud_msg_.data.resize(num_pixels * cloud_msg_.point_step);
-    cloud_msg_.width = width;
-    cloud_msg_.height = height;
-    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg_, "x");
-    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg_, "y");
-    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg_, "z");
-    sensor_msgs::PointCloud2Iterator<uint32_t> iter_rgb(cloud_msg_, "rgb");
+    points_.resize(num_pixels);
+    colors_.resize(num_pixels);
     
     const Eigen::Affine3f tf = 
         Translation3f(CONFIG_tx, CONFIG_ty, CONFIG_tz) * 
@@ -187,27 +236,25 @@ class K4ARosInterface : public K4AWrapper {
         AngleAxisf(DegToRad(CONFIG_roll), Vector3f(1, 0, 0));
         
     for (int idx = 0; idx < num_pixels; ++idx) {
-      p = tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
-      if (FLAGS_points) {
-        *iter_x = p.x();
-        *iter_y = p.y();
-        *iter_z = p.z();
-        *iter_rgb = rgb_data[idx];;
-        ++iter_x;
-        ++iter_y;
-        ++iter_z;
-        ++iter_rgb;
-      }
+      points_[idx] = 
+          tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
+      colors_[idx] = rgb_data[idx];
     }
-    if (FLAGS_points) cloud_publisher_.publish(cloud_msg_);
+    UpdateCostmap();
+    if (FLAGS_points) {
+      PublishPointCloud();
+    }
   }
 
  private:
   std::vector<Eigen::Vector3f> rgbd_ray_lookup_;
-  sensor_msgs::Image image_msg_;
+  std::vector<Eigen::Vector3f> points_;
+  std::vector<uint32_t> colors_;
+  sensor_msgs::Image costmap_msg_;
   sensor_msgs::PointCloud2 cloud_msg_;
-  ros::Publisher image_publisher_;
+  ros::Publisher costmap_publisher_;
   ros::Publisher cloud_publisher_;
+  CImg<float> costmap_;
 };
 
 int main(int argc, char* argv[]) {
@@ -222,7 +269,7 @@ int main(int argc, char* argv[]) {
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
   config.synchronized_images_only = true;
-  K4ARosInterface interface(n, CONFIG_serial, config);
+  DepthToLidar interface(n, CONFIG_serial, config);
 
   while (ros::ok()) {
     interface.Capture();
