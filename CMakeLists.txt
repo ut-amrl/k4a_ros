@@ -35,6 +35,7 @@ SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src)
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/shared)
+INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/config_reader/include)
 
 ADD_SUBDIRECTORY(src/shared)
 
@@ -58,4 +59,12 @@ ADD_EXECUTABLE(get_calibration
     src/k4a_wrapper.cc)
 TARGET_LINK_LIBRARIES(get_calibration pthread
     ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a gflags X11
+    ${BUILD_SPECIFIC_LIBRARIES})
+
+ROSBUILD_ADD_EXECUTABLE(depth_to_lidar
+    src/depth_to_lidar.cc
+    src/k4a_wrapper.cc)
+ADD_DEPENDENCIES(depth_to_lidar rosbuild_precompile)
+TARGET_LINK_LIBRARIES(depth_to_lidar roslib roscpp pthread boost_system
+    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
