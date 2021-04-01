@@ -218,6 +218,8 @@ class DepthToLidar : public K4AWrapper {
     if (FLAGS_v > 0) {
       printf("Received a registered frame, t=%f\n", GetMonotonicTime());
     }
+    static CumulativeFunctionTimer ft(__FUNCTION__);
+    CumulativeFunctionTimer::Invocation invoke(&ft);
     const int width = calibration_.color_camera_calibration.resolution_width;
     const int height = calibration_.color_camera_calibration.resolution_height;
     uint16_t* depth_data = 
