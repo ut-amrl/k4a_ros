@@ -23,7 +23,7 @@ jobs:
             libjpeg8-dev libgoogle-perftools-dev \
             libsuitesparse-dev libblas-dev liblapack-dev libopenmpi-dev \
             libgoogle-glog-dev libgflags-dev libceres-dev libtbb-dev \
-            libk4a1.4-dev k4a-tools
+            libk4a1.4-dev k4a-tools cimg-dev
 
       # Install ROS
       - name: Install ROS
