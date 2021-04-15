@@ -1,5 +1,5 @@
-PROJECT(k4a_to_scan)
-CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
+PROJECT(k4a_to_scan LANGUAGES C CXX)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
 
 SET(CMAKE_AUTOMOC ON)
 SET(CMAKE_AUTORCC ON)
@@ -7,6 +7,19 @@ SET(CMAKE_AUTOUIC ON)
 
 SET(CMAKE_CXX_FLAGS "-march=native -Wall -Werror -g")
 set(CMAKE_CXX_STANDARD 14)
+
+FIND_PACKAGE(CUDA)
+
+IF("${CUDA_VERSION_STRING}" STREQUAL "")
+  SET(CUDA_FOUND False)
+ELSE()
+  MESSAGE(STATUS "CUDA detected, enabling GPU code")
+  ENABLE_LANGUAGE(CUDA)
+  SET(CUDA_FOUND True)
+  ADD_COMPILE_DEFINITIONS(CUDA_ENABLED)
+ENDIF()
+
+MESSAGE(STATUS "CUDA: ${CUDA_FOUND} Version: ${CUDA_VERSION_STRING} Compiler: ${CMAKE_CUDA_COMPILER}")
 
 IF(${CMAKE_BUILD_TYPE} MATCHES "Release")
   MESSAGE(STATUS "Additional Flags for Release mode")
@@ -68,3 +81,9 @@ ADD_DEPENDENCIES(depth_to_lidar rosbuild_precompile)
 TARGET_LINK_LIBRARIES(depth_to_lidar roslib roscpp pthread boost_system
     ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
+
+IF(CUDA_FOUND)
+  ADD_LIBRARY(cuda_lib src/processing_kernels_cuda.cu)
+  TARGET_LINK_LIBRARIES(depth_to_lidar cuda_lib)
+ENDIF()
+

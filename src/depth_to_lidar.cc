@@ -37,6 +37,9 @@
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
 
+#ifdef CUDA_ENABLED
+#include "processing_kernels.h"
+#endif
 #include "config_reader/config_reader.h"
 #include "math/geometry.h"
 #include "k4a_wrapper.h"
@@ -60,6 +63,7 @@ DECLARE_int32(v);
 DEFINE_bool(depth, true, "Publish depth images");
 DEFINE_bool(points, true, "Publish point cloud");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
+DEFINE_bool(test, false, "Run test mode");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
@@ -259,11 +263,20 @@ class DepthToLidar : public K4AWrapper {
   CImg<float> costmap_;
 };
 
+int Test() {
+#ifdef CUDA_ENABLED
+  TestCuda();
+#endif
+  return 0;
+}
+
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
+  if (FLAGS_test) {
+    return Test();
+  }
   config_reader::ConfigReader reader({FLAGS_config_file});
-
   ros::init(argc, argv, "joystick");
   ros::NodeHandle n;
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
