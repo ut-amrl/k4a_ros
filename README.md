@@ -1,5 +1,8 @@
 # k4a_ros
+
 Azure Kinect ROS drivers
+
+[![Build Status](https://github.com/ut-amrl/k4a_ros/actions/workflows/buildTest.yml/badge.svg)](https://github.com/ut-amrl/k4a_ros/actions)
 
 ## Dependencies
 
