@@ -14,7 +14,14 @@ Azure Kinect ROS drivers
     ```
     deb https://packages.microsoft.com/ubuntu/18.04/prod bionic main
     ```
-    After that, follow the same instructions as for \*buntu 18.04
+    If installing on the nvidia Jetson with Ubuntu 18.04, you will need to modify the package line as follows ([reference](https://github.com/microsoft/Azure-Kinect-Sensor-SDK/blob/develop/docs/usage.md#debian-package)):
+    ```
+    deb https://packages.microsoft.com/ubuntu/18.04/multiarch/prod bionic main
+    ```
+    After that, follow the same instructions as for \*buntu 18.04:
+    ```
+    sudo apt install libk4a1.4-dev k4a-tools
+    ```
 
 ## Compile
 
