@@ -41,3 +41,8 @@ To save registered color and RGB images to disk (e.g. to the directory `out`):
 ```
 ./bin/save_rgbd_images --save_dir out
 ```
+
+## XServer errors
+
+This package needs access to an OpenGL display for the k4a drivers. If running in a headless mode, you might have to recreate the `~/.Xauthority` file to gain access to the server, in addition to setting the `DISPLAY` environment variable (e.g. `export DISPLAY=:0`). To re-create the `~/.Xauthority` file, see:
+https://unix.stackexchange.com/questions/209746/how-to-resolve-no-protocol-specified-for-su-user
