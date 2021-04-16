@@ -34,7 +34,6 @@
 #include "ros/ros.h"
 #include "sensor_msgs/Image.h"
 #include "sensor_msgs/image_encodings.h"
-#include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
 
@@ -53,7 +52,6 @@ using std::string;
 using Eigen::Affine3f;
 using Eigen::AngleAxisf;
 using Eigen::Translation3f;
-using Eigen::Vector2f;
 using Eigen::Vector3f;
 using k4a_wrapper::K4AWrapper;
 using cimg_library::CImg;
@@ -71,7 +69,6 @@ DEFINE_bool(test, false, "Run test mode");
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
 CONFIG_STRING(points_topic, "points_topic");
-CONFIG_STRING(scan_topic, "scan_topic");
 CONFIG_STRING(frame_id, "frame_id");
 
 CONFIG_FLOAT(yaw, "rotation.yaw");
@@ -80,10 +77,6 @@ CONFIG_FLOAT(roll, "rotation.roll");
 CONFIG_FLOAT(tx, "translation.x");
 CONFIG_FLOAT(ty, "translation.y");
 CONFIG_FLOAT(tz, "translation.z");
-CONFIG_UINT(skip_points, "skip_points");
-
-CONFIG_FLOAT(ground_angle_thresh, "ground_angle_thresh");
-CONFIG_FLOAT(ground_dist_thresh, "ground_dist_thresh");
 
 class DepthToLidar : public K4AWrapper {
  public:
@@ -92,13 +85,11 @@ class DepthToLidar : public K4AWrapper {
       ros::NodeHandle& n, 
       const std::string& serial,
       const k4a_device_configuration_t& config)  :
-      K4AWrapper(serial, config, false) {
+      K4AWrapper(serial, config, true) {
     costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
     cloud_publisher_ = 
         n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
-    scan_publisher_ = 
-        n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
     InitMessages();
     InitLookups();
   }
@@ -107,12 +98,11 @@ class DepthToLidar : public K4AWrapper {
     costmap_msg_.header.seq = 0;
     costmap_msg_.header.frame_id = CONFIG_frame_id;
     cloud_msg_.header = costmap_msg_.header;
-    scan_msg_.header = costmap_msg_.header;
     costmap_msg_.encoding = sensor_msgs::image_encodings::MONO8;
     costmap_msg_.is_bigendian = false;
 
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
+    const int width = calibration_.color_camera_calibration.resolution_width;
+    const int height = calibration_.color_camera_calibration.resolution_height;
     cloud_msg_.fields.resize(4);
     cloud_msg_.point_step = 3 * sizeof(float) + sizeof(uint32_t);
     cloud_msg_.is_dense = false;
@@ -139,8 +129,8 @@ class DepthToLidar : public K4AWrapper {
   }
 
   void InitLookups() {
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
+    const int width = calibration_.color_camera_calibration.resolution_width;
+    const int height = calibration_.color_camera_calibration.resolution_height;
 
     k4a_float2_t p;
     k4a_float3_t ray;
@@ -155,8 +145,8 @@ class DepthToLidar : public K4AWrapper {
             &calibration_, 
             &p,
             1.f, 
-            K4A_CALIBRATION_TYPE_DEPTH, 
-            K4A_CALIBRATION_TYPE_DEPTH, 
+            K4A_CALIBRATION_TYPE_COLOR, 
+            K4A_CALIBRATION_TYPE_COLOR, 
             &ray, 
             &valid);
         if (valid) {
@@ -174,8 +164,8 @@ class DepthToLidar : public K4AWrapper {
     sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg_, "z");
     sensor_msgs::PointCloud2Iterator<uint32_t> iter_rgb(cloud_msg_, "rgb");
     
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
+    const int width = calibration_.color_camera_calibration.resolution_width;
+    const int height = calibration_.color_camera_calibration.resolution_height;
     const int num_pixels = width * height;
     for (int idx = 0; idx < num_pixels; ++idx) {
       *iter_x = points_[idx].x();
@@ -189,82 +179,131 @@ class DepthToLidar : public K4AWrapper {
     }
     cloud_publisher_.publish(cloud_msg_);
   }
-  void UnregisteredRGBDCallback(k4a_image_t color_image, 
-                                k4a_image_t depth_image) override {
+
+  CImg<float> PropagateCostmap(const CImg<float>& costmap) {
+    static const int kMaxPropagateSteps = 10;
+    CImg<float> p(costmap);
+    auto Propagate = [&](int x, int y, int dx, int dy) {
+      float neighbor = p(x + dx, y + dy);
+      if (neighbor != -100.0) {
+        if (p(x, y) == -100.0) {
+          p(x, y) = neighbor;
+        } else {
+          p(x, y) = min(p(x, y), neighbor);
+        }
+        // printf("%d %d %d %d %f %f\n", x, y, dx, dy, p(x,y), neighbor);
+      }
+    };
+    for (int i = 0; i < kMaxPropagateSteps; ++i) {
+      for (int x = 1; x + 1 < costmap.width(); ++x) {
+        for (int y = 1; y + 1 < costmap.height(); ++y) {
+          if (costmap(x, y) == -100.0) {
+            Propagate(x, y, 1, 0);
+            Propagate(x, y, -1, 0);
+            Propagate(x, y, 0, 1);
+            Propagate(x, y, 0, -1);
+            Propagate(x, y, 1, 1);
+            Propagate(x, y, 1, -1);
+            Propagate(x, y, -1, 1);
+            Propagate(x, y, -1, -1);
+            // p(x, y) = 10;
+          }
+        }
+      }
+    }
+    return p;
+  }
+
+  void UpdateCostmap() {
+    static CumulativeFunctionTimer ft(__FUNCTION__);
+    static CumulativeFunctionTimer ft2("point cloud reconstruction");
+    CumulativeFunctionTimer::Invocation invoke(&ft);
+    const int kSize = 400;
+    const float kResolution = 0.015;
+    costmap_ = CImg<float>(kSize, kSize, 1, 1, -100);
+    costmap_msg_.width = kSize;
+    costmap_msg_.height = kSize;
+    costmap_msg_.data.resize(kSize * kSize * sizeof(uint8_t));
+    costmap_msg_.step = kSize * sizeof(uint8_t);
+    {
+      CumulativeFunctionTimer::Invocation invoke2(&ft2);
+    for (const Vector3f& p : points_) {
+      if (!isfinite(p.x()) || !isfinite(p.y()) || !isfinite(p.z())) continue;
+      if (p.z() < 0.04) continue;
+      const int x = static_cast<int>(floor(p.x() / kResolution));
+      const int y = static_cast<int>(-floor(p.y() / kResolution)) + kSize / 2;
+      if (x < 0 || x >= kSize || y < 0 || y >= kSize) continue;
+      // printf("%d %d\n", x, y);
+      if (costmap_(x, y) == -100.0) {
+        costmap_(x, y) = p.z();
+      } else {
+        costmap_(x, y) = max<float>(costmap_(x, y), p.z());
+      }
+    }
+    }
+    costmap_ = CImg<float>(PropagateCostmap(costmap_));
+    for (int x = 0; x < kSize; ++x) {
+      for (int y = 0; y < kSize; ++y) {
+        const int idx = y * kSize + x;
+        // printf("%d %d %d\n", x, y, idx);
+        if (fabs(costmap_(x, y)) < 0.05) {
+          costmap_msg_.data[idx] = 0;
+        } else {
+          costmap_msg_.data[idx] = static_cast<uint8_t>(
+            std::min<float>(255.0, costmap_(x, y) / 0.0025));
+        }
+      }
+    }
+    costmap_publisher_.publish(costmap_msg_);
+  }
+
+  void RegisteredRGBDCallback(
+        k4a_image_t color_image, k4a_image_t depth_image) override {
     if (FLAGS_v > 0) {
       printf("Received a registered frame, t=%f\n", GetMonotonicTime());
     }
-    if (depth_image == nullptr) return;
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
+    const int width = calibration_.color_camera_calibration.resolution_width;
+    const int height = calibration_.color_camera_calibration.resolution_height;
     uint16_t* depth_data = 
         reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
+    uint32_t* rgb_data = 
+        reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
     const int num_pixels = width * height;
     CHECK_EQ(num_pixels, static_cast<int>(rgbd_ray_lookup_.size()));
+    points_.resize(num_pixels);
+    colors_.resize(num_pixels);
+    
     const Eigen::Affine3f tf = 
         Translation3f(CONFIG_tx, CONFIG_ty, CONFIG_tz) * 
         AngleAxisf(DegToRad(CONFIG_yaw), Vector3f(0, 0, 1)) *
         AngleAxisf(DegToRad(CONFIG_pitch), Vector3f(0, 1, 0)) *
         AngleAxisf(DegToRad(CONFIG_roll), Vector3f(1, 0, 0));
-
+    
     {
-    static CumulativeFunctionTimer ft("Conversion");
-    CumulativeFunctionTimer::Invocation invoke(&ft);
-    const float tan_a = tan(DegToRad(CONFIG_ground_angle_thresh));
-    const float angle_min = -M_PI_2;
-    const float angle_max = M_PI_2;
-    const float angle_increment = DegToRad(2.0f);
-    const int num_ranges = ceil((angle_max - angle_min) / angle_increment);
-    // scan_msg_.ranges.resize(num_ranges);
-    scan_msg_.ranges.assign(num_ranges, FLT_MAX);
-    Vector3f p(0, 0, 0);
-    const int incr = 1 + CONFIG_skip_points;
-    for (int idx = 0; idx < num_pixels; idx += incr) {
-      p = tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
-      if (fabs(p.z() / p.x()) < tan_a || 
-          fabs(p.z()) < CONFIG_ground_dist_thresh) continue;
-      const float a = atan2(p.y(), p.x());
-      const float r = Vector2f(p.x(), p.y()).norm();
-      const int index = (a - angle_min) / angle_increment;
-      if (index < 0 || index >= num_ranges) continue;
-      scan_msg_.ranges[index] = min(scan_msg_.ranges[index], r);
+    static CumulativeFunctionTimer ft2("reconstruction");
+    CumulativeFunctionTimer::Invocation invoke2(&ft2);
+    for (int idx = 0; idx < num_pixels; ++idx) {
+      points_[idx] = 
+          tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
+      colors_[idx] = rgb_data[idx];
     }
-    scan_msg_.angle_min = angle_min;
-    scan_msg_.angle_max = angle_max;
-    scan_msg_.angle_increment = angle_increment;
-    scan_msg_.range_min = 0.0;
-    scan_msg_.range_max = 10.0;
-    scan_msg_.header.stamp = ros::Time::now();
     }
-    scan_publisher_.publish(scan_msg_);
-
-    if (FLAGS_points) {
-      points_.resize(num_pixels);
-      colors_.resize(num_pixels);
-      for (int idx = 0; idx < num_pixels; ++idx) {
-        points_[idx] = 
-            tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
-        colors_[idx] = 0xC0C0C0;
-      }
-      PublishPointCloud();
-    }
-  }
-  void ColorCallback(k4a_image_t image) {
-
+    // UpdateCostmap();
+    // if (FLAGS_points) {
+    //   PublishPointCloud();
+    // }
   }
 
  private:
   std::vector<Eigen::Vector3f> rgbd_ray_lookup_;
   std::vector<Eigen::Vector3f> points_;
   std::vector<uint32_t> colors_;
-  sensor_msgs::LaserScan scan_msg_;
   sensor_msgs::Image costmap_msg_;
   sensor_msgs::PointCloud2 cloud_msg_;
   ros::Publisher costmap_publisher_;
   ros::Publisher cloud_publisher_;
-  ros::Publisher scan_publisher_;
   CImg<float> costmap_;
 };
 
@@ -288,7 +327,7 @@ int main(int argc, char* argv[]) {
   config.color_resolution = K4A_COLOR_RESOLUTION_720P;
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
-  config.synchronized_images_only = false;
+  config.synchronized_images_only = true;
   DepthToLidar interface(n, CONFIG_serial, config);
 
   while (ros::ok()) {
