@@ -21,7 +21,13 @@
 #include <iostream>
 #include <math.h>
 
+#include "eigen3/Eigen/Dense"
+#include "eigen3/Eigen/Geometry"
+#include "shared/util/timer.h"
 #include "processing_kernels.h"
+
+using Eigen::Vector3f;
+using Eigen::Affine3f;
 
 // Kernel function to add the elements of two arrays
 __global__
@@ -29,13 +35,29 @@ void Add(int n, float *x, float *y) {
   int index = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
   for (int i = index; i < n; i += stride)
-    y[i] = x[i] + y[i];
+    y[i] = sinf(x[i]) + cosf(y[i]);
 }
 
 __global__
 void Add2(int n, float *x, float *y) {
   for (int i = 0; i < n; i++)
-    y[i] = x[i] + y[i];
+    y[i] = sin(x[i]) + cos(y[i]);
+}
+
+__global__
+void Add3(int n, float *x, float *y) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= n) return;
+  y[i] = sinf(x[i]) + cosf(y[i]);
+}
+
+__global__
+void Transform(int n, const Affine3f tf, Vector3f* v1, Vector3f* v2) {
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for (int i = index; i < n; i += stride) {
+    v2[i] = tf * v1[i];
+  }
 }
 
 void GetCapabilities() {
@@ -63,37 +85,102 @@ void GetCapabilities() {
 
 void TestCuda() {
   GetCapabilities();
-  int N = 1<<30;
-  float *x, *y;
+  int N = 1920*1080;
+  Vector3f* v1 = nullptr;
+  Vector3f* v2 = nullptr;
+  Vector3f* v3 = new Vector3f[N];
+  cudaMallocManaged(&v1, N*sizeof(Vector3f));
+  cudaMallocManaged(&v2, N*sizeof(Vector3f));
 
-  // Allocate Unified Memory – accessible from CPU or GPU
-  cudaMallocManaged(&x, N*sizeof(float));
-  cudaMallocManaged(&y, N*sizeof(float));
+  Affine3f tf = Eigen::Translation3f(Vector3f(1, 0, 0)) * 
+      Eigen::AngleAxisf(1.0, Vector3f(0, 1, 0));
 
-  // initialize x and y arrays on the host
-  for (int i = 0; i < N; i++) {
-    x[i] = 1.0f;
-    y[i] = 2.0f;
+  for (int i = 0; i < N; ++i) {
+    v1[i] = Vector3f(1, 2, 3);
   }
 
-  // Run kernel on 1M elements on the GPU
-  int blockSize = 1024;
-  int numBlocks = (N + blockSize - 1) / blockSize;
-  printf("%d blocks, %d threads\n", numBlocks, blockSize);
-  Add<<<numBlocks, blockSize>>>(N, x, y);
-  // Add2<<<1, 256>>>(N, x, y);
-
-  // Wait for GPU to finish before accessing on host
-  cudaDeviceSynchronize();
-
-  // Check for errors (all values should be 3.0f)
-  float maxError = 0.0f;
-  for (int i = 0; i < N; i++) {
-    maxError = fmax(maxError, fabs(y[i]-3.0f));
+  {
+    FunctionTimer ft("CPU");
+    for (int i = 0; i < N; ++i) {
+      v3[i] = tf * v1[i];
+    }
   }
-  std::cout << "Max error: " << maxError << std::endl;
 
-  // Free memory
-  cudaFree(x);
-  cudaFree(y);
+  {
+    FunctionTimer ft("GPU");
+    int blockSize = 1024;
+    int numBlocks = (N + blockSize - 1) / blockSize;
+    printf("%d blocks, %d threads\n", numBlocks, blockSize);
+    Transform<<<numBlocks, blockSize>>>(N, tf, v1, v2);
+    // Wait for GPU to finish before accessing on host
+    cudaDeviceSynchronize();
+  }
+  float max_error = 0;
+  for (int i = 0; i < N; ++i) {
+    max_error = max(max_error, (v3[i] - v2[i]).norm());
+  }
+  printf("Max error: %f\n", max_error);
+
+  cudaFree(v1);
+  cudaFree(v2);
+  delete[] v3;
 }
+
+// void TestCuda() {
+//   GetCapabilities();
+//   int N = 1<<26;
+//   float *x, *y;
+//   float *z = new float[N];
+
+//   // Allocate Unified Memory – accessible from CPU or GPU
+//   cudaMallocManaged(&x, N*sizeof(float));
+//   cudaMallocManaged(&y, N*sizeof(float));
+
+//   // initialize x and y arrays on the host
+//   for (int i = 0; i < N; i++) {
+//     x[i] = 1.0f;
+//     y[i] = 2.0f;
+//     z[i] = sin(x[i]) + cos(y[i]);
+//   }
+
+//   {
+//     FunctionTimer ft("CPU");
+//     for (int i = 0; i < N; i++) {
+//       z[i] = sin(x[i]) + cos(y[i]);
+//     }
+//   }
+//   // Run kernel on 1M elements on the GPU
+//   if (true) {
+//     FunctionTimer ft("GPU");
+//     int blockSize = 1024;
+//     int numBlocks = (N + 1) / blockSize;
+//     printf("%d blocks, %d threads\n", numBlocks, blockSize);
+//     Add3<<<numBlocks, blockSize>>>(N, x, y);
+//     // Add2<<<1, 256>>>(N, x, y);
+
+//     // Wait for GPU to finish before accessing on host
+//     cudaDeviceSynchronize();
+//   } else {
+//     FunctionTimer ft("GPU");
+//     int blockSize = 1024;
+//     int numBlocks = (N + blockSize - 1) / blockSize;
+//     printf("%d blocks, %d threads\n", numBlocks, blockSize);
+//     Add<<<numBlocks, blockSize>>>(N, x, y);
+//     // Add2<<<1, 256>>>(N, x, y);
+
+//     // Wait for GPU to finish before accessing on host
+//     cudaDeviceSynchronize();
+//   }
+
+//   // Check for errors (all values should be 3.0f)
+//   float maxError = 0.0f;
+//   for (int i = 0; i < N; i++) {
+//     maxError = fmax(maxError, fabs(y[i]-z[i]));
+//   }
+//   std::cout << "Max error: " << maxError << std::endl;
+
+//   // Free memory
+//   cudaFree(x);
+//   cudaFree(y);
+//   delete z;
+// }

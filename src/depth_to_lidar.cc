@@ -56,6 +56,7 @@ using Eigen::Vector3f;
 using k4a_wrapper::K4AWrapper;
 using cimg_library::CImg;
 using std::max;
+using std::min;
 
 using namespace math_util;
 
@@ -179,29 +180,68 @@ class DepthToLidar : public K4AWrapper {
     cloud_publisher_.publish(cloud_msg_);
   }
 
+  CImg<float> PropagateCostmap(const CImg<float>& costmap) {
+    static const int kMaxPropagateSteps = 10;
+    CImg<float> p(costmap);
+    auto Propagate = [&](int x, int y, int dx, int dy) {
+      float neighbor = p(x + dx, y + dy);
+      if (neighbor != -100.0) {
+        if (p(x, y) == -100.0) {
+          p(x, y) = neighbor;
+        } else {
+          p(x, y) = min(p(x, y), neighbor);
+        }
+        // printf("%d %d %d %d %f %f\n", x, y, dx, dy, p(x,y), neighbor);
+      }
+    };
+    for (int i = 0; i < kMaxPropagateSteps; ++i) {
+      for (int x = 1; x + 1 < costmap.width(); ++x) {
+        for (int y = 1; y + 1 < costmap.height(); ++y) {
+          if (costmap(x, y) == -100.0) {
+            Propagate(x, y, 1, 0);
+            Propagate(x, y, -1, 0);
+            Propagate(x, y, 0, 1);
+            Propagate(x, y, 0, -1);
+            Propagate(x, y, 1, 1);
+            Propagate(x, y, 1, -1);
+            Propagate(x, y, -1, 1);
+            Propagate(x, y, -1, -1);
+            // p(x, y) = 10;
+          }
+        }
+      }
+    }
+    return p;
+  }
+
   void UpdateCostmap() {
     static CumulativeFunctionTimer ft(__FUNCTION__);
+    static CumulativeFunctionTimer ft2("point cloud reconstruction");
     CumulativeFunctionTimer::Invocation invoke(&ft);
     const int kSize = 400;
     const float kResolution = 0.015;
-    costmap_ = CImg<float>(kSize, kSize, 1, 1, -1);
+    costmap_ = CImg<float>(kSize, kSize, 1, 1, -100);
     costmap_msg_.width = kSize;
     costmap_msg_.height = kSize;
     costmap_msg_.data.resize(kSize * kSize * sizeof(uint8_t));
     costmap_msg_.step = kSize * sizeof(uint8_t);
+    {
+      CumulativeFunctionTimer::Invocation invoke2(&ft2);
     for (const Vector3f& p : points_) {
       if (!isfinite(p.x()) || !isfinite(p.y()) || !isfinite(p.z())) continue;
+      if (p.z() < 0.04) continue;
       const int x = static_cast<int>(floor(p.x() / kResolution));
       const int y = static_cast<int>(-floor(p.y() / kResolution)) + kSize / 2;
       if (x < 0 || x >= kSize || y < 0 || y >= kSize) continue;
       // printf("%d %d\n", x, y);
-      if (costmap_(x, y) < 0.0) {
+      if (costmap_(x, y) == -100.0) {
         costmap_(x, y) = p.z();
       } else {
         costmap_(x, y) = max<float>(costmap_(x, y), p.z());
       }
     }
-
+    }
+    costmap_ = CImg<float>(PropagateCostmap(costmap_));
     for (int x = 0; x < kSize; ++x) {
       for (int y = 0; y < kSize; ++y) {
         const int idx = y * kSize + x;
@@ -240,16 +280,20 @@ class DepthToLidar : public K4AWrapper {
         AngleAxisf(DegToRad(CONFIG_yaw), Vector3f(0, 0, 1)) *
         AngleAxisf(DegToRad(CONFIG_pitch), Vector3f(0, 1, 0)) *
         AngleAxisf(DegToRad(CONFIG_roll), Vector3f(1, 0, 0));
-        
+    
+    {
+    static CumulativeFunctionTimer ft2("reconstruction");
+    CumulativeFunctionTimer::Invocation invoke2(&ft2);
     for (int idx = 0; idx < num_pixels; ++idx) {
       points_[idx] = 
           tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
       colors_[idx] = rgb_data[idx];
     }
-    UpdateCostmap();
-    if (FLAGS_points) {
-      PublishPointCloud();
     }
+    // UpdateCostmap();
+    // if (FLAGS_points) {
+    //   PublishPointCloud();
+    // }
   }
 
  private:
