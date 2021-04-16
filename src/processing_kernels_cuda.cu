@@ -21,13 +21,13 @@
 #include <iostream>
 #include <math.h>
 
-#include "eigen3/Eigen/Dense"
-#include "eigen3/Eigen/Geometry"
+// #include "eigen3/Eigen/Dense"
+// #include "eigen3/Eigen/Geometry"
 #include "shared/util/timer.h"
 #include "processing_kernels.h"
 
-using Eigen::Vector3f;
-using Eigen::Affine3f;
+// using Eigen::Vector3f;
+// using Eigen::Affine3f;
 
 // Kernel function to add the elements of two arrays
 __global__
@@ -93,75 +93,78 @@ void GetCapabilities() {
 }
 
 
-__global__
-void Transform(int n, int stride, const Affine3f tf, Vector3f* v1, Vector3f* v2) {
-  int start = (blockIdx.x * blockDim.x + threadIdx.x) * stride;
-  int end = min(n, start + stride);
-  for (int i = start; i < end; ++i) {
-    v2[i] = tf * v1[i];
-  }
-}
+// __global__
+// void Transform(int n, int stride, const Affine3f tf, Vector3f* v1, Vector3f* v2) {
+//   int start = (blockIdx.x * blockDim.x + threadIdx.x) * stride;
+//   int end = min(n, start + stride);
+//   for (int i = start; i < end; ++i) {
+//     v2[i] = tf * v1[i];
+//   }
+// }
 
 void TestCuda() {
-  GetCapabilities();
-  int N = 1920*1080;
-  Vector3f* v1 = nullptr;
-  Vector3f* v2 = nullptr;
-  Vector3f* v3 = new Vector3f[N];
-  cudaMallocManaged(&v1, N*sizeof(Vector3f));
-  cudaMallocManaged(&v2, N*sizeof(Vector3f));
-  cudaMemPrefetchAsync(v1, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
-  cudaMemPrefetchAsync(v2, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
-
-  Affine3f tf = Eigen::Translation3f(Vector3f(1, 0, 0)) * 
-      Eigen::AngleAxisf(1.0, Vector3f(0, 1, 0));
-
-  for (int i = 0; i < N; ++i) {
-    v1[i] = Vector3f(1, 2, 3);
-  }
-
-  {
-    FunctionTimer ft("CPU");
-    for (int i = 0; i < N; ++i) {
-      v3[i] = tf * v1[i];
-    }
-  }
-
-  int device = -1;
-  cudaGetDevice(&device);
-  cudaMemPrefetchAsync(v1, N*sizeof(Vector3f), device, NULL);
-  cudaMemPrefetchAsync(v2, N*sizeof(Vector3f), device, NULL);
-  {
-    FunctionTimer ft("GPU");
-    int stride = 128;
-    int blockSize = 1024;
-    int numBlocks = ((N + stride - 1) / stride + blockSize - 1) / blockSize;
-    printf("%d blocks, %d threads\n", numBlocks, blockSize);
-    if (true) {
-      Transform<<<numBlocks, blockSize>>>(N, stride, tf, v1, v2);
-    } else {
-      Eigen::Matrix4f m = tf.matrix();
-      Transform2<<<numBlocks, blockSize>>>(
-          N, 
-          m.data(), 
-          reinterpret_cast<float*>(v1), 
-          reinterpret_cast<float*>(v2));
-    }
-    // Wait for GPU to finish before accessing on host
-    cudaDeviceSynchronize();
-  }
-  cudaMemPrefetchAsync(v1, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
-  cudaMemPrefetchAsync(v2, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
-  float max_error = 0;
-  for (int i = 0; i < N; ++i) {
-    max_error = max(max_error, (v3[i] - v2[i]).norm());
-  }
-  printf("Max error: %f\n", max_error);
-
-  cudaFree(v1);
-  cudaFree(v2);
-  delete[] v3;
 }
+
+// void TestCuda() {
+//   GetCapabilities();
+//   int N = 1920*1080;
+//   Vector3f* v1 = nullptr;
+//   Vector3f* v2 = nullptr;
+//   Vector3f* v3 = new Vector3f[N];
+//   cudaMallocManaged(&v1, N*sizeof(Vector3f));
+//   cudaMallocManaged(&v2, N*sizeof(Vector3f));
+//   cudaMemPrefetchAsync(v1, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
+//   cudaMemPrefetchAsync(v2, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
+
+//   Affine3f tf = Eigen::Translation3f(Vector3f(1, 0, 0)) * 
+//       Eigen::AngleAxisf(1.0, Vector3f(0, 1, 0));
+
+//   for (int i = 0; i < N; ++i) {
+//     v1[i] = Vector3f(1, 2, 3);
+//   }
+
+//   {
+//     FunctionTimer ft("CPU");
+//     for (int i = 0; i < N; ++i) {
+//       v3[i] = tf * v1[i];
+//     }
+//   }
+
+//   int device = -1;
+//   cudaGetDevice(&device);
+//   cudaMemPrefetchAsync(v1, N*sizeof(Vector3f), device, NULL);
+//   cudaMemPrefetchAsync(v2, N*sizeof(Vector3f), device, NULL);
+//   {
+//     FunctionTimer ft("GPU");
+//     int stride = 128;
+//     int blockSize = 1024;
+//     int numBlocks = ((N + stride - 1) / stride + blockSize - 1) / blockSize;
+//     printf("%d blocks, %d threads\n", numBlocks, blockSize);
+//     if (true) {
+//       Transform<<<numBlocks, blockSize>>>(N, stride, tf, v1, v2);
+//     } else {
+//       Eigen::Matrix4f m = tf.matrix();
+//       Transform2<<<numBlocks, blockSize>>>(
+//           N, 
+//           m.data(), 
+//           reinterpret_cast<float*>(v1), 
+//           reinterpret_cast<float*>(v2));
+//     }
+//     // Wait for GPU to finish before accessing on host
+//     cudaDeviceSynchronize();
+//   }
+//   cudaMemPrefetchAsync(v1, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
+//   cudaMemPrefetchAsync(v2, N*sizeof(Vector3f), cudaCpuDeviceId, NULL);
+//   float max_error = 0;
+//   for (int i = 0; i < N; ++i) {
+//     max_error = max(max_error, (v3[i] - v2[i]).norm());
+//   }
+//   printf("Max error: %f\n", max_error);
+
+//   cudaFree(v1);
+//   cudaFree(v2);
+//   delete[] v3;
+// }
 
 // void TestCuda() {
 //   GetCapabilities();
