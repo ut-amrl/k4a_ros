@@ -19,3 +19,4 @@ translation = {
 skip_points = 10;
 ground_dist_thresh = 0.05;
 ground_angle_thresh = 2.0; -- Degrees.
+num_ranges = 180;

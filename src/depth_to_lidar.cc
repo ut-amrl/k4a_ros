@@ -81,6 +81,7 @@ CONFIG_FLOAT(tx, "translation.x");
 CONFIG_FLOAT(ty, "translation.y");
 CONFIG_FLOAT(tz, "translation.z");
 CONFIG_UINT(skip_points, "skip_points");
+CONFIG_UINT(num_ranges, "num_ranges");
 
 CONFIG_FLOAT(ground_angle_thresh, "ground_angle_thresh");
 CONFIG_FLOAT(ground_dist_thresh, "ground_dist_thresh");
@@ -215,8 +216,8 @@ class DepthToLidar : public K4AWrapper {
     const float tan_a = tan(DegToRad(CONFIG_ground_angle_thresh));
     const float angle_min = -M_PI_2;
     const float angle_max = M_PI_2;
-    const float angle_increment = DegToRad(2.0f);
-    const int num_ranges = ceil((angle_max - angle_min) / angle_increment);
+    const int num_ranges = CONFIG_num_ranges;
+    const float angle_increment = (angle_max - angle_min) / num_ranges;
     // scan_msg_.ranges.resize(num_ranges);
     scan_msg_.ranges.assign(num_ranges, FLT_MAX);
     Vector3f p(0, 0, 0);
