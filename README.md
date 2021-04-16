@@ -32,6 +32,16 @@ Run `make [-j]`
 
 ## Usage
 
+To stream just converted laserscan data :
+```
+./bin/depth_to_lidar --points=false
+```
+
+To stream converted laserscan data and a 3D point cloud:
+```
+./bin/depth_to_lidar
+```
+
 To stream an RGB point cloud as `sensor_msgs/PointCloud2`:
 ```
 ./bin/stream_pcl
@@ -41,3 +51,8 @@ To save registered color and RGB images to disk (e.g. to the directory `out`):
 ```
 ./bin/save_rgbd_images --save_dir out
 ```
+
+## XServer errors
+
+This package needs access to an OpenGL display for the k4a drivers. If running in a headless mode, you might have to recreate the `~/.Xauthority` file to gain access to the server, in addition to setting the `DISPLAY` environment variable (e.g. `export DISPLAY=:0`). To re-create the `~/.Xauthority` file, see:
+https://unix.stackexchange.com/questions/209746/how-to-resolve-no-protocol-specified-for-su-user
