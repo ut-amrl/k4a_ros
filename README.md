@@ -32,6 +32,16 @@ Run `make [-j]`
 
 ## Usage
 
+To stream just converted laserscan data :
+```
+./bin/depth_to_lidar --points=false
+```
+
+To stream converted laserscan data and a 3D point cloud:
+```
+./bin/depth_to_lidar
+```
+
 To stream an RGB point cloud as `sensor_msgs/PointCloud2`:
 ```
 ./bin/stream_pcl
