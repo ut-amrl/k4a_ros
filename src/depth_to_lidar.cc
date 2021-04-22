@@ -30,6 +30,7 @@
 #include "eigen3/Eigen/Geometry"
 #include "gflags/gflags.h"
 #include "glog/logging.h"
+#include "image_transport/image_transport.h"
 #include "omp.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Image.h"
@@ -65,14 +66,17 @@ using namespace math_util;
 DECLARE_int32(v);
 DEFINE_bool(depth, true, "Publish depth images");
 DEFINE_bool(points, true, "Publish point cloud");
+DEFINE_bool(image, true, "Publish color images");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
 DEFINE_bool(test, false, "Run test mode");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
 CONFIG_STRING(points_topic, "points_topic");
+CONFIG_STRING(image_topic, "image_topic");
+CONFIG_STRING(image_frame, "image_frame");
 CONFIG_STRING(scan_topic, "scan_topic");
-CONFIG_STRING(frame_id, "frame_id");
+CONFIG_STRING(scan_frame, "scan_frame");
 
 CONFIG_FLOAT(yaw, "rotation.yaw");
 CONFIG_FLOAT(pitch, "rotation.pitch");
@@ -93,24 +97,28 @@ class DepthToLidar : public K4AWrapper {
       ros::NodeHandle& n, 
       const std::string& serial,
       const k4a_device_configuration_t& config)  :
-      K4AWrapper(serial, config, false) {
+      K4AWrapper(serial, config, false),
+      image_transport_(n) {
     costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
     cloud_publisher_ = 
         n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
     scan_publisher_ = 
         n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
+    image_publisher_ = image_transport_.advertise(CONFIG_image_topic, 1);
     InitMessages();
     InitLookups();
   }
 
   void InitMessages() {
-    costmap_msg_.header.seq = 0;
-    costmap_msg_.header.frame_id = CONFIG_frame_id;
-    cloud_msg_.header = costmap_msg_.header;
-    scan_msg_.header = costmap_msg_.header;
-    costmap_msg_.encoding = sensor_msgs::image_encodings::MONO8;
-    costmap_msg_.is_bigendian = false;
+    image_msg_.header.seq = cloud_msg_.header.seq = scan_msg_.header.seq = 0;
+    
+    image_msg_.header.frame_id = CONFIG_image_frame;
+    scan_msg_.header.frame_id = CONFIG_scan_frame;
+    cloud_msg_.header.frame_id = CONFIG_scan_frame;
+
+    image_msg_.encoding = sensor_msgs::image_encodings::BGRA8;
+    image_msg_.is_bigendian = false;
 
     const int width = calibration_.depth_camera_calibration.resolution_width;
     const int height = calibration_.depth_camera_calibration.resolution_height;
@@ -190,12 +198,25 @@ class DepthToLidar : public K4AWrapper {
     }
     cloud_publisher_.publish(cloud_msg_);
   }
+
   void UnregisteredRGBDCallback(k4a_image_t color_image, 
                                 k4a_image_t depth_image) override {
     if (FLAGS_v > 0) {
       printf("Received a registered frame, t=%f\n", GetMonotonicTime());
     }
     if (depth_image == nullptr) return;
+    if (color_image != nullptr && FLAGS_image) {
+      uint32_t* rgb_data = 
+          reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
+      image_msg_.width = calibration_.color_camera_calibration.resolution_width;
+      image_msg_.height = 
+          calibration_.color_camera_calibration.resolution_height;
+      image_msg_.step = image_msg_.width * 4;
+      image_msg_.data.resize(image_msg_.step * image_msg_.height);
+      memcpy(image_msg_.data.data(), rgb_data, image_msg_.data.size());
+      image_msg_.header.stamp = ros::Time::now();
+      image_publisher_.publish(image_msg_);
+    }
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     const int width = calibration_.depth_camera_calibration.resolution_width;
@@ -261,12 +282,13 @@ class DepthToLidar : public K4AWrapper {
   std::vector<Eigen::Vector3f> points_;
   std::vector<uint32_t> colors_;
   sensor_msgs::LaserScan scan_msg_;
-  sensor_msgs::Image costmap_msg_;
+  sensor_msgs::Image image_msg_;
   sensor_msgs::PointCloud2 cloud_msg_;
   ros::Publisher costmap_publisher_;
   ros::Publisher cloud_publisher_;
   ros::Publisher scan_publisher_;
-  CImg<float> costmap_;
+  image_transport::Publisher image_publisher_;
+  image_transport::ImageTransport image_transport_;
 };
 
 int Test() {

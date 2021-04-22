@@ -12,4 +12,5 @@
   <depend package="tf"/>
   <depend package="amrl_msgs"/>
   <depend package="rosbag"/>
+  <depend package="image_transport"/>
 </package>
