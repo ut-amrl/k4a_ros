@@ -37,9 +37,8 @@
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
 
-#ifdef CUDA_ENABLED
 #include "processing_kernels.h"
-#endif
+
 #include "config_reader/config_reader.h"
 #include "math/geometry.h"
 #include "k4a_wrapper.h"
@@ -92,6 +91,8 @@ class DepthToLidar : public K4AWrapper {
         n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
     InitMessages();
     InitLookups();
+    InitCuda(rgbd_ray_lookup_.size(),
+             reinterpret_cast<float*>(rgbd_ray_lookup_.data()));
   }
 
   void InitMessages() {
@@ -181,7 +182,7 @@ class DepthToLidar : public K4AWrapper {
   }
 
   CImg<float> PropagateCostmap(const CImg<float>& costmap) {
-    static const int kMaxPropagateSteps = 10;
+    static const int kMaxPropagateSteps = 100;
     CImg<float> p(costmap);
     auto Propagate = [&](int x, int y, int dx, int dy) {
       float neighbor = p(x + dx, y + dy);
@@ -227,19 +228,19 @@ class DepthToLidar : public K4AWrapper {
     costmap_msg_.step = kSize * sizeof(uint8_t);
     {
       CumulativeFunctionTimer::Invocation invoke2(&ft2);
-    for (const Vector3f& p : points_) {
-      if (!isfinite(p.x()) || !isfinite(p.y()) || !isfinite(p.z())) continue;
-      if (p.z() < 0.04) continue;
-      const int x = static_cast<int>(floor(p.x() / kResolution));
-      const int y = static_cast<int>(-floor(p.y() / kResolution)) + kSize / 2;
-      if (x < 0 || x >= kSize || y < 0 || y >= kSize) continue;
-      // printf("%d %d\n", x, y);
-      if (costmap_(x, y) == -100.0) {
-        costmap_(x, y) = p.z();
-      } else {
-        costmap_(x, y) = max<float>(costmap_(x, y), p.z());
+      for (const Vector3f& p : points_) {
+        if (!isfinite(p.x()) || !isfinite(p.y()) || !isfinite(p.z())) continue;
+        if (p.z() < 0.04) continue;
+        const int x = static_cast<int>(floor(p.x() / kResolution));
+        const int y = static_cast<int>(-floor(p.y() / kResolution)) + kSize / 2;
+        if (x < 0 || x >= kSize || y < 0 || y >= kSize) continue;
+        // printf("%d %d\n", x, y);
+        if (costmap_(x, y) == -100.0) {
+          costmap_(x, y) = p.z();
+        } else {
+          costmap_(x, y) = max<float>(costmap_(x, y), p.z());
+        }
       }
-    }
     }
     costmap_ = CImg<float>(PropagateCostmap(costmap_));
     for (int x = 0; x < kSize; ++x) {
@@ -290,10 +291,10 @@ class DepthToLidar : public K4AWrapper {
       colors_[idx] = rgb_data[idx];
     }
     }
-    // UpdateCostmap();
-    // if (FLAGS_points) {
-    //   PublishPointCloud();
-    // }
+    UpdateCostmap();
+    if (FLAGS_points) {
+      PublishPointCloud();
+    }
   }
 
  private:
@@ -307,19 +308,10 @@ class DepthToLidar : public K4AWrapper {
   CImg<float> costmap_;
 };
 
-int Test() {
-#ifdef CUDA_ENABLED
-  TestCuda();
-#endif
-  return 0;
-}
-
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
-  if (FLAGS_test) {
-    return Test();
-  }
+  
   config_reader::ConfigReader reader({FLAGS_config_file});
   ros::init(argc, argv, "joystick");
   ros::NodeHandle n;

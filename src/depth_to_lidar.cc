@@ -68,7 +68,6 @@ DEFINE_bool(depth, true, "Publish depth images");
 DEFINE_bool(points, true, "Publish point cloud");
 DEFINE_bool(image, true, "Publish color images");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
-DEFINE_bool(test, false, "Run test mode");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
@@ -291,19 +290,9 @@ class DepthToLidar : public K4AWrapper {
   image_transport::ImageTransport image_transport_;
 };
 
-int Test() {
-#ifdef CUDA_ENABLED
-  TestCuda();
-#endif
-  return 0;
-}
-
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
-  if (FLAGS_test) {
-    return Test();
-  }
   config_reader::ConfigReader reader({FLAGS_config_file});
   ros::init(argc, argv, "joystick");
   ros::NodeHandle n;

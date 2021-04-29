@@ -21,10 +21,21 @@
 #include <iostream>
 #include <math.h>
 
+#include "cuda.h"
+#include "cuda_runtime_api.h"
+#include "glog/logging.h"
 // #include "eigen3/Eigen/Dense"
 // #include "eigen3/Eigen/Geometry"
 #include "shared/util/timer.h"
 #include "processing_kernels.h"
+
+#ifndef __global__
+#define __global__
+#endif
+
+#ifndef __device__
+#define __device__
+#endif
 
 // using Eigen::Vector3f;
 // using Eigen::Affine3f;
@@ -101,6 +112,59 @@ void GetCapabilities() {
 //     v2[i] = tf * v1[i];
 //   }
 // }
+
+
+uint16_t* cuda_depth_image = nullptr;
+float* cuda_tf = nullptr;
+float* cuda_points = nullptr;
+float* cuda_point_lookups = nullptr;
+float* cuda_costmap = nullptr;
+uint32_t* cuda_point_indices = nullptr;
+int cuda_device = -1;
+// Depth image size, hence point cloud size.
+int N = 0;
+const float costmap_resolution = 0.05;
+const int costmap_size = 100;
+
+void InitCuda(int depth_image_size, float* point_lookups) {
+  cudaGetDevice(&cuda_device);
+  N = depth_image_size;
+
+  CHECK_EQ(cudaMalloc(&cuda_tf, 12 * sizeof(float)), cudaSuccess);
+  CHECK_EQ(cudaMalloc(&cuda_depth_image, N * sizeof(uint16_t)), cudaSuccess);
+  CHECK_EQ(cudaMalloc(&cuda_points, 3 * N * sizeof(float)), cudaSuccess);
+  CHECK_EQ(cudaMalloc(&cuda_point_lookups, 3 * N * sizeof(float)),
+      cudaSuccess);
+  CHECK_EQ(cudaMalloc(&cuda_costmap, costmap_size * costmap_size * 
+      sizeof(float)), cudaSuccess);
+  CHECK_EQ(cudaMalloc(&cuda_point_indices, N * sizeof(uint32_t)), cudaSuccess);
+
+  // Copy the lookups to GPU memory.
+  CHECK_EQ(cudaMemcpy(cuda_point_lookups, point_lookups, 3 * N * sizeof(float), cudaMemcpyHostToDevice), cudaSuccess);
+
+}
+
+void DepthToCostmap(float* depth_image, float* tf, float* costmap) {
+  
+  // Inputs: depth image, point lookups, tf
+  // Output: costmap
+  
+  // Copy depth image to CUDA
+  CHECK_EQ(cudaMemcpy(cuda_depth_image, depth_image, N * sizeof(float), 
+      cudaMemcpyHostToDevice), cudaSuccess);
+  // Copy tf to CUDA
+  CHECK_EQ(cudaMemcpy(cuda_tf, tf, 12 * sizeof(float), cudaMemcpyHostToDevice), 
+      cudaSuccess);
+
+  // Run depth to point cloud & indexer kernel.
+  // Run costmap projection kernel.
+  // Run costmap propagation kernel.
+
+  // Copy costmap to CPU.
+  CHECK_EQ(cudaMemcpy(costmap, cuda_costmap, costmap_size * costmap_size * 
+      sizeof(float), cudaMemcpyDeviceToHost), cudaSuccess);
+  // Return costmap.
+}
 
 void TestCuda() {
 }

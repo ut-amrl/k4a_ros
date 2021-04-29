@@ -84,6 +84,12 @@ TARGET_LINK_LIBRARIES(depth_to_lidar roslib roscpp pthread boost_system
 
 IF(CUDA_FOUND)
   ADD_LIBRARY(cuda_lib src/processing_kernels_cuda.cu)
-  TARGET_LINK_LIBRARIES(depth_to_lidar cuda_lib)
+  ROSBUILD_ADD_EXECUTABLE(depth_to_costmap
+      src/depth_to_costmap.cc
+      src/k4a_wrapper.cc)
+  ADD_DEPENDENCIES(depth_to_costmap rosbuild_precompile)
+  TARGET_LINK_LIBRARIES(depth_to_costmap roslib roscpp pthread boost_system
+      ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
+      ${BUILD_SPECIFIC_LIBRARIES})
 ENDIF()
 

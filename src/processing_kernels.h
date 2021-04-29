@@ -22,5 +22,6 @@
 #define PROCESSING_KERNELS_H
 
 void TestCuda();
+void InitCuda(int depth_image_size, float* point_lookups);
 
 #endif  // PROCESSING_KERNELS_H
