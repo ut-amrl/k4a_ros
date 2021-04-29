@@ -88,6 +88,7 @@ CONFIG_UINT(num_ranges, "num_ranges");
 
 CONFIG_FLOAT(ground_angle_thresh, "ground_angle_thresh");
 CONFIG_FLOAT(ground_dist_thresh, "ground_dist_thresh");
+CONFIG_FLOAT(camera_angle_thresh, "camera_angle_thresh");
 
 class DepthToLidar : public K4AWrapper {
  public:
@@ -234,6 +235,7 @@ class DepthToLidar : public K4AWrapper {
     static CumulativeFunctionTimer ft("Conversion");
     CumulativeFunctionTimer::Invocation invoke(&ft);
     const float tan_a = tan(DegToRad(CONFIG_ground_angle_thresh));
+    const float tan_ca = tan(DegToRad(CONFIG_camera_angle_thresh));
     const float angle_min = -M_PI_2;
     const float angle_max = M_PI_2;
     const int num_ranges = CONFIG_num_ranges;
@@ -245,7 +247,8 @@ class DepthToLidar : public K4AWrapper {
     for (int idx = 0; idx < num_pixels; idx += incr) {
       p = tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
       if (fabs(p.z() / p.x()) < tan_a || 
-          fabs(p.z()) < CONFIG_ground_dist_thresh) continue;
+          fabs(p.z()) < CONFIG_ground_dist_thresh ||
+          fabs((p.z() - CONFIG_tz) / p.x()) > tan_ca) continue;
       const float a = atan2(p.y(), p.x());
       const float r = Vector2f(p.x(), p.y()).norm();
       const int index = (a - angle_min) / angle_increment;
