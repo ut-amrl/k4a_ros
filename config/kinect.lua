@@ -8,7 +8,7 @@ scan_topic = "kinect_scan";
 
 rotation = {
   yaw = 0;
-  pitch = 17;
+  pitch = 15;
   roll = 0;
 };
 
@@ -21,6 +21,7 @@ translation = {
 skip_points = 10;
 ground_dist_thresh = 0.04;
 ground_angle_thresh = 5.0; -- Degrees.
-camera_angle_thresh = 55.0;
+camera_angle_thresh = 50.0;
+min_dist_thresh = 0.05;
 num_ranges = 180;
 
