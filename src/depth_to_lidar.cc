@@ -77,7 +77,7 @@ CONFIG_STRING(rgb_frame, "rgb_image_frame");
 CONFIG_STRING(depth_frame, "depth_image_frame");
 CONFIG_STRING(scan_topic, "scan_topic");
 CONFIG_STRING(scan_frame, "scan_frame");
-CONFIG_STRING(registered, "registered_rgbd");
+CONFIG_BOOL(registered, "registered_rgbd");
 
 CONFIG_FLOAT(yaw, "rotation.yaw");
 CONFIG_FLOAT(pitch, "rotation.pitch");
@@ -100,7 +100,7 @@ class DepthToLidar : public K4AWrapper {
       ros::NodeHandle& n, 
       const std::string& serial,
       const k4a_device_configuration_t& config)  :
-      K4AWrapper(serial, config, FLAGS_registered),
+      K4AWrapper(serial, config, CONFIG_registered),
       image_transport_(n) {
     costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
@@ -139,21 +139,17 @@ class DepthToLidar : public K4AWrapper {
 
     depth_msg_.encoding = sensor_msgs::image_encodings::MONO16;
     depth_msg_.is_bigendian = false;
-    depth_msg_.width = FLAGS_registered ?
+    const int width = CONFIG_registered ?
         calibration_.color_camera_calibration.resolution_width : 
         calibration_.depth_camera_calibration.resolution_width;
-    depth_msg_.height = FLAGS_registered ?
-        calibration_.color_camera_calibration.resolution_height : 
+    const int height = CONFIG_registered ?
+        calibration_.color_camera_calibration.resolution_height :
         calibration_.depth_camera_calibration.resolution_height;
+    depth_msg_.width = width;
+    depth_msg_.height = height;
     depth_msg_.step = depth_msg_.width * sizeof(uint16_t);
     depth_msg_.data.resize(depth_msg_.step * depth_msg_.height);
 
-    const int width = FLAGS_registered ?
-        calibration_.color_camera_calibration.resolution_width : 
-        calibration_.depth_camera_calibration.resolution_width;
-    const int height = FLAGS_registered ?
-        calibration_.color_camera_calibration.resolution_height :
-        calibration_.depth_camera_calibration.resolution_height;
     cloud_msg_.fields.resize(4);
     cloud_msg_.point_step = 3 * sizeof(float) + sizeof(uint32_t);
     cloud_msg_.is_dense = false;
@@ -180,10 +176,10 @@ class DepthToLidar : public K4AWrapper {
   }
 
   void InitLookups() {
-    const int width = FLAGS_registered ?
+    const int width = CONFIG_registered ?
         calibration_.color_camera_calibration.resolution_width : 
         calibration_.depth_camera_calibration.resolution_width;
-    const int height = FLAGS_registered ?
+    const int height = CONFIG_registered ?
         calibration_.color_camera_calibration.resolution_height :
         calibration_.depth_camera_calibration.resolution_height;
     const int num_pixels = width * height;
@@ -203,7 +199,7 @@ class DepthToLidar : public K4AWrapper {
       p.xy.y = (float)y;
       for (int x = 0; x < width; x++, idx++) {
         p.xy.x = (float)x;
-        if (FLAGS_registered) {
+        if (CONFIG_registered) {
           k4a_calibration_2d_to_3d(
             &calibration_, 
             &p,
@@ -256,7 +252,7 @@ class DepthToLidar : public K4AWrapper {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     uint32_t* rgb_data = nullptr;
-    if (FLAGS_registered && color_image != nullptr) {
+    if (CONFIG_registered && color_image != nullptr) {
         rgb_data = 
             reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
     }
