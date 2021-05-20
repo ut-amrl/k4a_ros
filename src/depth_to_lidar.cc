@@ -48,34 +48,36 @@
 #include "util/helpers.h"
 #include "util/timer.h"
 
-#include "CImg.h"
-
 using std::string;
 using Eigen::Affine3f;
 using Eigen::AngleAxisf;
+using Eigen::Matrix3f;
 using Eigen::Translation3f;
 using Eigen::Vector2f;
 using Eigen::Vector3f;
 using k4a_wrapper::K4AWrapper;
-using cimg_library::CImg;
 using std::max;
 using std::min;
+using std::vector;
 
 using namespace math_util;
 
 DECLARE_int32(v);
-DEFINE_bool(depth, true, "Publish depth images");
-DEFINE_bool(points, true, "Publish point cloud");
-DEFINE_bool(image, true, "Publish color images");
+DEFINE_bool(depth, false, "Publish depth images");
+DEFINE_bool(points, false, "Publish point cloud");
+DEFINE_bool(rgb, false, "Publish color images");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
 CONFIG_STRING(points_topic, "points_topic");
-CONFIG_STRING(image_topic, "image_topic");
-CONFIG_STRING(image_frame, "image_frame");
+CONFIG_STRING(rgb_topic, "rgb_image_topic");
+CONFIG_STRING(depth_topic, "depth_image_topic");
+CONFIG_STRING(rgb_frame, "rgb_image_frame");
+CONFIG_STRING(depth_frame, "depth_image_frame");
 CONFIG_STRING(scan_topic, "scan_topic");
 CONFIG_STRING(scan_frame, "scan_frame");
+CONFIG_STRING(registered, "registered_rgbd");
 
 CONFIG_FLOAT(yaw, "rotation.yaw");
 CONFIG_FLOAT(pitch, "rotation.pitch");
@@ -97,7 +99,7 @@ class DepthToLidar : public K4AWrapper {
       ros::NodeHandle& n, 
       const std::string& serial,
       const k4a_device_configuration_t& config)  :
-      K4AWrapper(serial, config, false),
+      K4AWrapper(serial, config, FLAGS_registered),
       image_transport_(n) {
     costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
@@ -105,23 +107,52 @@ class DepthToLidar : public K4AWrapper {
         n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
     scan_publisher_ = 
         n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
-    image_publisher_ = image_transport_.advertise(CONFIG_image_topic, 1);
+    rgb_publisher_ = image_transport_.advertise(CONFIG_rgb_topic, 1);
+    depth_publisher_ = image_transport_.advertise(CONFIG_depth_topic, 1);
     InitMessages();
     InitLookups();
   }
 
   void InitMessages() {
-    image_msg_.header.seq = cloud_msg_.header.seq = scan_msg_.header.seq = 0;
+    depth_msg_.header.seq = heightmap_msg_.header.seq = rgb_msg_.header.seq = 
+        cloud_msg_.header.seq = scan_msg_.header.seq = 0;
     
-    image_msg_.header.frame_id = CONFIG_image_frame;
+    rgb_msg_.header.frame_id = CONFIG_rgb_frame;
+    depth_msg_.header.frame_id = CONFIG_depth_frame;
     scan_msg_.header.frame_id = CONFIG_scan_frame;
     cloud_msg_.header.frame_id = CONFIG_scan_frame;
 
-    image_msg_.encoding = sensor_msgs::image_encodings::BGRA8;
-    image_msg_.is_bigendian = false;
+    heightmap_msg_.header = scan_msg_.header;
+    // OpenCV Image format, float, 2 channel.
+    heightmap_msg_.encoding = sensor_msgs::image_encodings::TYPE_32FC2;
+    heightmap_msg_.is_bigendian = false;
 
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
+    rgb_msg_.encoding = sensor_msgs::image_encodings::BGRA8;
+    rgb_msg_.is_bigendian = false;
+    rgb_msg_.width = 
+        calibration_.color_camera_calibration.resolution_width;
+    rgb_msg_.height = 
+        calibration_.color_camera_calibration.resolution_height;
+    rgb_msg_.step = rgb_msg_.width * sizeof(uint32_t);
+    rgb_msg_.data.resize(rgb_msg_.step * rgb_msg_.height);
+
+    depth_msg_.encoding = sensor_msgs::image_encodings::MONO16;
+    depth_msg_.is_bigendian = false;
+    depth_msg_.width = FLAGS_registered ?
+        calibration_.color_camera_calibration.resolution_width : 
+        calibration_.depth_camera_calibration.resolution_width;
+    depth_msg_.height = FLAGS_registered ?
+        calibration_.color_camera_calibration.resolution_height : 
+        calibration_.depth_camera_calibration.resolution_height;
+    depth_msg_.step = depth_msg_.width * sizeof(uint16_t);
+    depth_msg_.data.resize(depth_msg_.step * depth_msg_.height);
+
+    const int width = FLAGS_registered ?
+        calibration_.color_camera_calibration.resolution_width : 
+        calibration_.depth_camera_calibration.resolution_width;
+    const int height = FLAGS_registered ?
+        calibration_.color_camera_calibration.resolution_height :
+        calibration_.depth_camera_calibration.resolution_height;
     cloud_msg_.fields.resize(4);
     cloud_msg_.point_step = 3 * sizeof(float) + sizeof(uint32_t);
     cloud_msg_.is_dense = false;
@@ -148,19 +179,40 @@ class DepthToLidar : public K4AWrapper {
   }
 
   void InitLookups() {
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
-
+    const int width = FLAGS_registered ?
+        calibration_.color_camera_calibration.resolution_width : 
+        calibration_.depth_camera_calibration.resolution_width;
+    const int height = FLAGS_registered ?
+        calibration_.color_camera_calibration.resolution_height :
+        calibration_.depth_camera_calibration.resolution_height;
+    const int num_pixels = width * height;
+    points_.resize(num_pixels);
+    colors_.resize(num_pixels);
+    rgbd_ray_lookup_.resize(num_pixels);
     k4a_float2_t p;
     k4a_float3_t ray;
     int valid;
-
-    rgbd_ray_lookup_.resize(width * height);
+    ext_translation_ = Vector3f(CONFIG_tx, CONFIG_ty, CONFIG_tz);
+    const Matrix3f rotation =
+        Matrix3f(AngleAxisf(DegToRad(CONFIG_yaw), Vector3f(0, 0, 1))) *
+        Matrix3f(AngleAxisf(DegToRad(CONFIG_pitch), Vector3f(0, 1, 0))) *
+        Matrix3f(AngleAxisf(DegToRad(CONFIG_roll), Vector3f(1, 0, 0)));
+    
     for (int y = 0, idx = 0; y < height; y++) {
       p.xy.y = (float)y;
       for (int x = 0; x < width; x++, idx++) {
         p.xy.x = (float)x;
-        k4a_calibration_2d_to_3d(
+        if (FLAGS_registered) {
+          k4a_calibration_2d_to_3d(
+            &calibration_, 
+            &p,
+            1.f, 
+            K4A_CALIBRATION_TYPE_COLOR, 
+            K4A_CALIBRATION_TYPE_COLOR, 
+            &ray, 
+            &valid);
+        } else {
+          k4a_calibration_2d_to_3d(
             &calibration_, 
             &p,
             1.f, 
@@ -168,8 +220,10 @@ class DepthToLidar : public K4AWrapper {
             K4A_CALIBRATION_TYPE_DEPTH, 
             &ray, 
             &valid);
+        }
         if (valid) {
-            rgbd_ray_lookup_[idx] = 0.001 * Vector3f(1, -ray.xyz.x, -ray.xyz.y);
+            rgbd_ray_lookup_[idx] = 
+                0.001 * rotation * Vector3f(1, -ray.xyz.x, -ray.xyz.y);
         } else {
             rgbd_ray_lookup_[idx].setConstant(nanf(""));
         }
@@ -183,10 +237,8 @@ class DepthToLidar : public K4AWrapper {
     sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg_, "z");
     sensor_msgs::PointCloud2Iterator<uint32_t> iter_rgb(cloud_msg_, "rgb");
     
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
-    const int num_pixels = width * height;
-    for (int idx = 0; idx < num_pixels; ++idx) {
+    CHECK_EQ(points_.size(), colors_.size());
+    for (size_t idx = 0; idx < points_.size(); ++idx) {
       *iter_x = points_[idx].x();
       *iter_y = points_[idx].y();
       *iter_z = points_[idx].z();
@@ -199,40 +251,29 @@ class DepthToLidar : public K4AWrapper {
     cloud_publisher_.publish(cloud_msg_);
   }
 
-  void UnregisteredRGBDCallback(k4a_image_t color_image, 
-                                k4a_image_t depth_image) override {
-    if (FLAGS_v > 0) {
-      printf("Received a registered frame, t=%f\n", GetMonotonicTime());
-    }
-    if (depth_image == nullptr) return;
-    if (color_image != nullptr && FLAGS_image) {
-      uint32_t* rgb_data = 
-          reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
-      image_msg_.width = calibration_.color_camera_calibration.resolution_width;
-      image_msg_.height = 
-          calibration_.color_camera_calibration.resolution_height;
-      image_msg_.step = image_msg_.width * 4;
-      image_msg_.data.resize(image_msg_.step * image_msg_.height);
-      memcpy(image_msg_.data.data(), rgb_data, image_msg_.data.size());
-      image_msg_.header.stamp = ros::Time::now();
-      image_publisher_.publish(image_msg_);
-    }
+  void DepthToPointCloud(k4a_image_t color_image, k4a_image_t depth_image) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
-    const int width = calibration_.depth_camera_calibration.resolution_width;
-    const int height = calibration_.depth_camera_calibration.resolution_height;
+    uint32_t* rgb_data = nullptr;
+    if (FLAGS_registered && color_image != nullptr) {
+        rgb_data = 
+            reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
+    }
     uint16_t* depth_data = 
         reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
-    const int num_pixels = width * height;
-    CHECK_EQ(num_pixels, static_cast<int>(rgbd_ray_lookup_.size()));
-    const Eigen::Affine3f tf = 
-        Translation3f(CONFIG_tx, CONFIG_ty, CONFIG_tz) * 
-        AngleAxisf(DegToRad(CONFIG_yaw), Vector3f(0, 0, 1)) *
-        AngleAxisf(DegToRad(CONFIG_pitch), Vector3f(0, 1, 0)) *
-        AngleAxisf(DegToRad(CONFIG_roll), Vector3f(1, 0, 0));
+    for (size_t i = 0; i < points_.size(); ++i) {
+      points_[i] = ext_translation_ + 
+          (static_cast<float>(depth_data[i]) * rgbd_ray_lookup_[i]);
+      if (rgb_data) {
+        colors_[i] = rgb_data[i];
+      } else {
+        colors_[i] = 0xC0C0C0LU;
+      }
+    }
+  }
 
-    {
-    static CumulativeFunctionTimer ft("Conversion");
+  void PublishScan() {
+    static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     const float tan_a = tan(DegToRad(CONFIG_ground_angle_thresh));
     const float tan_ca = tan(DegToRad(CONFIG_camera_angle_thresh));
@@ -240,12 +281,10 @@ class DepthToLidar : public K4AWrapper {
     const float angle_max = M_PI_2;
     const int num_ranges = CONFIG_num_ranges;
     const float angle_increment = (angle_max - angle_min) / num_ranges;
-    // scan_msg_.ranges.resize(num_ranges);
     scan_msg_.ranges.assign(num_ranges, FLT_MAX);
-    Vector3f p(0, 0, 0);
     const int incr = 1 + CONFIG_skip_points;
-    for (int idx = 0; idx < num_pixels; idx += incr) {
-      p = tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
+    for (size_t i = 0; i < points_.size(); i += incr) {
+      const Vector3f& p = points_[i];
       if (fabs(p.z() / p.x()) < tan_a || 
           fabs(p.z()) < CONFIG_ground_dist_thresh ||
           fabs((p.z() - CONFIG_tz) / p.x()) > tan_ca) continue;
@@ -261,22 +300,62 @@ class DepthToLidar : public K4AWrapper {
     scan_msg_.range_min = 0.0;
     scan_msg_.range_max = 10.0;
     scan_msg_.header.stamp = ros::Time::now();
-    }
     scan_publisher_.publish(scan_msg_);
+  }
 
+  void PublishRGBImage(k4a_image_t color_image) {
+    static CumulativeFunctionTimer ft(__FUNCTION__);
+    CumulativeFunctionTimer::Invocation invoke(&ft);
+    uint32_t* rgb_data = 
+          reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
+    memcpy(rgb_msg_.data.data(), rgb_data, rgb_msg_.data.size());
+    rgb_msg_.header.stamp = ros::Time::now();
+    rgb_publisher_.publish(rgb_msg_);
+  }
+
+  void PublishDepthImage(k4a_image_t depth_image) {
+    static CumulativeFunctionTimer ft(__FUNCTION__);
+    CumulativeFunctionTimer::Invocation invoke(&ft);
+    uint16_t* depth_data = 
+        reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
+    memcpy(depth_msg_.data.data(), depth_data, depth_msg_.data.size());
+    depth_msg_.header.stamp = ros::Time::now();
+    depth_publisher_.publish(depth_msg_);
+  }
+
+  void PublishHeightMap() {
+  }
+
+  void RGBDCallback(k4a_image_t color_image, k4a_image_t depth_image) {
+    if (color_image != nullptr && FLAGS_rgb) {
+      PublishRGBImage(color_image);
+    }
+
+    if (depth_image == nullptr) return;
+    DepthToPointCloud(color_image, depth_image);
+    PublishScan();
+    if (FLAGS_depth) {
+      PublishDepthImage(depth_image);
+    }
     if (FLAGS_points) {
-      points_.resize(num_pixels);
-      colors_.resize(num_pixels);
-      for (int idx = 0; idx < num_pixels; ++idx) {
-        points_[idx] = 
-            tf * (static_cast<float>(depth_data[idx]) * rgbd_ray_lookup_[idx]);
-        colors_[idx] = 0xC0C0C0;
-      }
       PublishPointCloud();
     }
   }
-  void ColorCallback(k4a_image_t image) {
 
+  void RegisteredRGBDCallback(k4a_image_t color_image, 
+                              k4a_image_t depth_image) override {
+    if (FLAGS_v > 0) {
+      printf("Received a registered frame, t=%f\n", GetMonotonicTime());
+    }
+    RGBDCallback(color_image, depth_image);
+  }
+
+  void UnregisteredRGBDCallback(k4a_image_t color_image, 
+                                k4a_image_t depth_image) override {
+    if (FLAGS_v > 0) {
+      printf("Received an unregistered frame, t=%f\n", GetMonotonicTime());
+    }
+    RGBDCallback(color_image, depth_image);
   }
 
  private:
@@ -284,13 +363,19 @@ class DepthToLidar : public K4AWrapper {
   std::vector<Eigen::Vector3f> points_;
   std::vector<uint32_t> colors_;
   sensor_msgs::LaserScan scan_msg_;
-  sensor_msgs::Image image_msg_;
+  sensor_msgs::Image rgb_msg_;
+  sensor_msgs::Image depth_msg_;
+  sensor_msgs::Image heightmap_msg_;
   sensor_msgs::PointCloud2 cloud_msg_;
   ros::Publisher costmap_publisher_;
   ros::Publisher cloud_publisher_;
   ros::Publisher scan_publisher_;
-  image_transport::Publisher image_publisher_;
+  image_transport::Publisher rgb_publisher_;
+  image_transport::Publisher depth_publisher_;
+  image_transport::Publisher heightmap_publisher_;
   image_transport::ImageTransport image_transport_;
+  // Translation component of extrinsics.
+  Eigen::Vector3f ext_translation_;
 };
 
 int main(int argc, char* argv[]) {

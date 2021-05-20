@@ -1,21 +1,24 @@
 serial = "";
 costmap_topic = "kinect_costmap";
 points_topic = "kinect_points";
-image_topic = "kinect_image";
-image_frame = "kinect";
+rgb_image_topic = "camera/rgb/image_raw";
+depth_image_topic = "camera/depth/image_raw";
+rgb_image_frame = "kinect_color";
+depth_image_frame = "kinect_depth";
 scan_frame = "base_link";
 scan_topic = "kinect_scan";
+registered_rgbd = false;
 
 rotation = {
   yaw = 0;
-  pitch = 17;
+  pitch = 5;
   roll = 0;
 };
 
 translation = {
   x = 0;
   y = 0;
-  z = .60;
+  z = .46;
 };
 
 skip_points = 10;
