@@ -91,6 +91,7 @@ CONFIG_UINT(num_ranges, "num_ranges");
 CONFIG_FLOAT(ground_angle_thresh, "ground_angle_thresh");
 CONFIG_FLOAT(ground_dist_thresh, "ground_dist_thresh");
 CONFIG_FLOAT(camera_angle_thresh, "camera_angle_thresh");
+CONFIG_FLOAT(min_dist_thresh, "min_dist_thresh");
 
 class DepthToLidar : public K4AWrapper {
  public:
@@ -290,6 +291,7 @@ class DepthToLidar : public K4AWrapper {
           fabs((p.z() - CONFIG_tz) / p.x()) > tan_ca) continue;
       const float a = atan2(p.y(), p.x());
       const float r = Vector2f(p.x(), p.y()).norm();
+      if (r <= CONFIG_min_dist_thresh) continue;
       const int index = (a - angle_min) / angle_increment;
       if (index < 0 || index >= num_ranges) continue;
       scan_msg_.ranges[index] = min(scan_msg_.ranges[index], r);
