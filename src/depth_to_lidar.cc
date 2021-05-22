@@ -342,7 +342,7 @@ class DepthToLidar : public K4AWrapper {
 
   void RegisteredRGBDCallback(k4a_image_t color_image, 
                               k4a_image_t depth_image) override {
-    if (FLAGS_v > 0) {
+    if (FLAGS_v > 1) {
       printf("Received a registered frame, t=%f\n", GetMonotonicTime());
     }
     RGBDCallback(color_image, depth_image);
@@ -350,7 +350,7 @@ class DepthToLidar : public K4AWrapper {
 
   void UnregisteredRGBDCallback(k4a_image_t color_image, 
                                 k4a_image_t depth_image) override {
-    if (FLAGS_v > 0) {
+    if (FLAGS_v > 1) {
       printf("Received an unregistered frame, t=%f\n", GetMonotonicTime());
     }
     RGBDCallback(color_image, depth_image);

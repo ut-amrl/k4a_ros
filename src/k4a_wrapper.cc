@@ -115,7 +115,17 @@ void K4AWrapper::Capture() {
         // Color and depth.
         k4a_image_t depth_image = k4a_capture_get_depth_image(capture);
         k4a_image_t color_image = k4a_capture_get_color_image(capture);
-        if (register_images_) {
+        if (depth_image == nullptr || color_image == nullptr) {
+          // One of the frames was not received, drop this capture.
+          if (FLAGS_v > 0) {
+            fprintf(stderr, 
+                    "Received at least one invalid frame, "
+                    "depth:0x%08lX, "
+                    "color:0x%08lX\n",
+                    reinterpret_cast<uint64_t>(depth_image),
+                    reinterpret_cast<uint64_t>(color_image));
+          }
+        } else if (register_images_) {
           k4a_image_t registered_depth;
           CHECK_EQ(k4a_image_create(
               K4A_IMAGE_FORMAT_DEPTH16,
@@ -132,8 +142,8 @@ void K4AWrapper::Capture() {
         } else {
           UnregisteredRGBDCallback(color_image, depth_image);
         }
-        k4a_image_release(depth_image);
-        k4a_image_release(color_image);
+        if (depth_image) k4a_image_release(depth_image);
+        if (color_image) k4a_image_release(color_image);
       }
       k4a_capture_release(capture);
     } break;
@@ -152,7 +162,7 @@ void K4AWrapper::Capture() {
 }
 
 void DepthCallback(k4a_capture_t capture) {
-  if (FLAGS_v > 0) {
+  if (FLAGS_v > 1) {
     printf("Received a frame, t=%f\n", GetMonotonicTime());
   }
   k4a_image_t depth_image = k4a_capture_get_depth_image(capture);
