@@ -380,7 +380,7 @@ int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
   config_reader::ConfigReader reader({FLAGS_config_file});
-  ros::init(argc, argv, "joystick");
+  ros::init(argc, argv, "k4a_ros");
   ros::NodeHandle n;
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
   config.color_resolution = K4A_COLOR_RESOLUTION_720P;
