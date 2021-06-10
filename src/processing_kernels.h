@@ -24,4 +24,13 @@
 void TestCuda();
 void InitCuda(int depth_image_size, float* point_lookups);
 
+void TestCopy(int n, const float* src, float* dest);
+
+void InitializeTransform(const float* ray_lookups,
+                         const float* translation,
+                         int N);
+
+void DepthImageToPointCloud(const uint16_t* depth_image, 
+                            int N,
+                            float* point_cloud);
 #endif  // PROCESSING_KERNELS_H

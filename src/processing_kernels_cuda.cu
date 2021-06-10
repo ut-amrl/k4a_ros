@@ -29,6 +29,15 @@
 #include "shared/util/timer.h"
 #include "processing_kernels.h"
 
+#include <thrust/copy.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/generate.h>
+#include <thrust/reduce.h>
+#include <thrust/functional.h>
+#include <thrust/tuple.h>
+#include <algorithm>
+
 #ifndef __global__
 #define __global__
 #endif
@@ -36,6 +45,113 @@
 #ifndef __device__
 #define __device__
 #endif
+
+struct SimpleVector3f {
+  float x;
+  float y;
+  float z;
+
+  __device__ __host__ 
+  SimpleVector3f() {}
+
+  __device__ __host__
+  SimpleVector3f(float x, float y, float z) : x(x), y(y), z(z) {}
+
+  // SimpleVector3f& operator=(SimpleVector3f&& other) {
+  //   x = other.x;
+  //   y = other.y;
+  //   z = other.z;
+  //   return *this;
+  // }
+
+  // SimpleVector3f& operator=(const SimpleVector3f& other) {
+  //   x = other.x;
+  //   y = other.y;
+  //   z = other.z;
+  //   return *this;
+  // }
+
+  // Vector binary operators.
+  #define VECTORBINARYOP(op) \
+    __device__ __host__ \
+    SimpleVector3f operator op(const SimpleVector3f& other) const { \
+      return SimpleVector3f( \
+        x op other.x, \
+        y op other.y, \
+        z op other.z); \
+    }
+  VECTORBINARYOP(+);
+  VECTORBINARYOP(-);
+  VECTORBINARYOP(*);
+  VECTORBINARYOP(/);
+
+  // Scalar binary operators.
+  #define SCALARBINARYOP(op) \
+    __device__ __host__ \
+    SimpleVector3f operator op(const float& c) const { \
+      return SimpleVector3f( \
+        x op c, \
+        y op c, \
+        z op c); \
+    }
+  // SCALARBINARYOP(+);
+  // SCALARBINARYOP(-);
+  SCALARBINARYOP(*);
+  SCALARBINARYOP(/);
+
+};
+
+struct DepthTo3D {
+  __device__ __host__
+  SimpleVector3f operator() (const uint16_t& depth, const SimpleVector3f& ray) {
+    return translation_ + (ray * depth);
+  }
+  SimpleVector3f translation_;
+};
+
+thrust::device_vector<uint16_t> depth_data_;
+thrust::device_vector<SimpleVector3f> rgbd_ray_lookup_;
+DepthTo3D depth_to_3d_;
+
+void InitializeTransform(const float* ray_lookups,
+                         const float* translation,
+                         int N) {
+  const SimpleVector3f* ray_lookups_vector = 
+      reinterpret_cast<const SimpleVector3f*>(ray_lookups);
+  rgbd_ray_lookup_.resize(N);
+  thrust::copy(ray_lookups_vector, ray_lookups_vector + N, rgbd_ray_lookup_.begin());
+  depth_to_3d_.translation_.x = translation[0];
+  depth_to_3d_.translation_.y = translation[1];
+  depth_to_3d_.translation_.z = translation[2];
+}
+
+void DepthImageToPointCloud(const uint16_t* depth_image, 
+                            int N,
+                            float* point_cloud) {
+  static thrust::device_vector<uint16_t> depth_image_d;
+  static thrust::device_vector<SimpleVector3f> point_cloud_d;
+  depth_image_d.resize(N);
+  point_cloud_d.resize(N);
+  thrust::copy(depth_image, depth_image + N, depth_image_d.begin());
+  thrust::transform(depth_image_d.begin(),
+                    depth_image_d.end(),
+                    rgbd_ray_lookup_.begin(),
+                    point_cloud_d.begin(),
+                    depth_to_3d_);
+  thrust::copy(point_cloud_d.begin(),
+               point_cloud_d.end(),
+               reinterpret_cast<SimpleVector3f*>(point_cloud));
+}
+
+void TestCopy(int n, const float* src, float* dest) {
+  const SimpleVector3f* src_vector = 
+      reinterpret_cast<const SimpleVector3f*>(src);
+  SimpleVector3f* dest_vector = 
+      reinterpret_cast<SimpleVector3f*>(dest);
+  rgbd_ray_lookup_.resize(n);
+  thrust::copy(src_vector, src_vector + n, rgbd_ray_lookup_.begin());
+  thrust::copy(rgbd_ray_lookup_.begin(), rgbd_ray_lookup_.end(), dest_vector);
+}
 
 // using Eigen::Vector3f;
 // using Eigen::Affine3f;
@@ -123,7 +239,7 @@ uint32_t* cuda_point_indices = nullptr;
 int cuda_device = -1;
 // Depth image size, hence point cloud size.
 int N = 0;
-const float costmap_resolution = 0.05;
+// const float costmap_resolution = 0.05;
 const int costmap_size = 100;
 
 void InitCuda(int depth_image_size, float* point_lookups) {

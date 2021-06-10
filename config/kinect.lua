@@ -7,7 +7,7 @@ rgb_image_frame = "kinect_color";
 depth_image_frame = "kinect_depth";
 scan_frame = "base_link";
 scan_topic = "kinect_scan";
-registered_rgbd = false;
+registered_rgbd = true;
 
 rotation = {
   yaw = 0;
