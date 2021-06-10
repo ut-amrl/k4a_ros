@@ -39,9 +39,6 @@
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
 
-#ifdef CUDA_ENABLED
-#include "processing_kernels.h"
-#endif
 #include "config_reader/config_reader.h"
 #include "math/geometry.h"
 #include "k4a_wrapper.h"

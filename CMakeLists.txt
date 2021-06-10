@@ -99,5 +99,13 @@ IF(CUDA_FOUND)
   TARGET_LINK_LIBRARIES(cuda_depth_to_lidar roslib roscpp pthread boost_system
       ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
       ${BUILD_SPECIFIC_LIBRARIES})
+
+  ADD_EXECUTABLE(cuda_tests
+                 src/cuda_tests.cc)
+  TARGET_LINK_LIBRARIES(cuda_tests
+                        cuda_lib
+                        gtest
+                        gtest_main
+                        ${BUILD_SPECIFIC_LIBRARIES})
 ENDIF()
 

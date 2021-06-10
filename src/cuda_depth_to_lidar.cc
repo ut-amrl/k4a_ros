@@ -59,6 +59,8 @@ using std::min;
 using std::vector;
 
 using namespace math_util;
+using processing_kernels::InitializeTransform;
+using processing_kernels::DepthImageToPointCloud;
 
 DECLARE_int32(v);
 DEFINE_bool(depth, false, "Publish depth images");
@@ -239,21 +241,9 @@ class DepthToLidar : public K4AWrapper {
         reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
     CHECK_EQ(points_.size(), rgbd_ray_lookup_.size());
     CHECK_EQ(points_.size(), colors_.size());
-    if (true) {
-      DepthImageToPointCloud(
-          depth_data, points_.size(), reinterpret_cast<float*>(points_.data()));
-      colors_.assign(colors_.size(), 0xC0C0C0LU);
-    } else {
-      for (size_t i = 0; i < points_.size(); ++i) {
-        points_[i] = ext_translation_ + 
-            (static_cast<float>(depth_data[i]) * rgbd_ray_lookup_[i]);
-        if (rgb_data) {
-          colors_[i] = rgb_data[i];
-        } else {
-          colors_[i] = 0xC0C0C0LU;
-        }
-      }
-    }
+    DepthImageToPointCloud(
+        depth_data, points_.size(), reinterpret_cast<float*>(points_.data()));
+    std::copy(rgb_data, rgb_data + points_.size(), colors_.begin());
   }
 
   void PublishScan() {
@@ -354,6 +344,11 @@ class DepthToLidar : public K4AWrapper {
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
+
+  if (FLAGS_v > 0) {
+    processing_kernels::GetCudaCapabilities();
+  }
+
   config_reader::ConfigReader reader({FLAGS_config_file});
   ros::init(argc, argv, "k4a_ros");
   ros::NodeHandle n;

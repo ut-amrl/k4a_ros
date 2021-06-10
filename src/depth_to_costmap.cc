@@ -91,8 +91,6 @@ class DepthToLidar : public K4AWrapper {
         n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
     InitMessages();
     InitLookups();
-    InitCuda(rgbd_ray_lookup_.size(),
-             reinterpret_cast<float*>(rgbd_ray_lookup_.data()));
   }
 
   void InitMessages() {

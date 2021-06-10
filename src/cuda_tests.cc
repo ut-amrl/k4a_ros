@@ -18,21 +18,25 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef PROCESSING_KERNELS_H
-#define PROCESSING_KERNELS_H
+#include <vector>
 
-namespace processing_kernels {
-void TestCopy(int n, const float* src, float* dest);
+#include "gtest/gtest.h"
+#include "processing_kernels.h"
 
-void InitializeTransform(const float* ray_lookups,
-                         const float* translation,
-                         int N);
+using std::vector;
 
-void DepthImageToPointCloud(const uint16_t* depth_image, 
-                            int N,
-                            float* point_cloud);
-
-void GetCudaCapabilities();
-}  // namespace processing_kernels
-
-#endif  // PROCESSING_KERNELS_H
+TEST(Cuda, MemoryCopy) {
+  {
+    const int n = 1000000;
+    vector<float> src(n);    
+    vector<float> dest(n);
+    for (int i = 0; i < n; ++i) {
+      src[i] = float(n) / 1000;
+      dest[i] = 0;
+    }
+    processing_kernels::TestCopy(n, src.data(), dest.data());
+    for (int i = 0; i < n; ++i) {
+      ASSERT_EQ(src[i], dest[i]);
+    }
+  }
+}
