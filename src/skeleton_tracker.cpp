@@ -125,8 +125,8 @@ class SkeletonsToHumans: public K4AWrapper {
           const Eigen::Vector3f centroid = GetCentroid(skeleton);
 
           human.id = id;
-          human.pose.x = centroid.x();
-          human.pose.y = centroid.y();
+          human.pose.x = centroid.z();
+          human.pose.y = centroid.x();
           humans_.human_states.push_back(human);
       }
   }
