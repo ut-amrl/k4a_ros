@@ -22,6 +22,7 @@
 
 #include "eigen3/Eigen/Dense"
 #include "k4a/k4a.h"
+#include "k4abt.hpp"
 
 namespace k4a_wrapper {
 
@@ -29,7 +30,7 @@ class K4AWrapper {
  public:
   ~K4AWrapper();
   K4AWrapper() = delete;
-  K4AWrapper(const std::string& serial, 
+  K4AWrapper(const std::string& serial,
              const k4a_device_configuration_t& config,
              bool enable_image_registration);
 
@@ -52,7 +53,7 @@ class K4AWrapper {
   k4a_device_t device_;
   k4a_transformation_t transformation_;
   const bool register_images_;
- 
+
  public:
   k4a_calibration_t calibration_;
   k4a_device_configuration_t config_;
