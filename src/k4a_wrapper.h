@@ -37,6 +37,7 @@ class K4AWrapper {
   void Capture();
 
   virtual void DepthCallback(k4a_image_t image) {}
+  virtual void SkeletonCallback(k4a_capture_t capture) {}
   virtual void ColorCallback(k4a_image_t image) {}
   virtual void UnregisteredRGBDCallback(
       k4a_image_t image_rgb, k4a_image_t image_depth) {}

@@ -42,10 +42,10 @@ using Eigen::Vector3f;
 namespace k4a_wrapper {
 
 K4AWrapper::K4AWrapper(
-    const std::string& serial, 
+    const std::string& serial,
     const k4a_device_configuration_t& config,
-    bool enable_image_registration) : 
-        device_(nullptr), 
+    bool enable_image_registration) :
+        device_(nullptr),
         register_images_(enable_image_registration),
         config_(config) {
   OpenDevice(serial);
@@ -66,9 +66,9 @@ K4AWrapper::~K4AWrapper() {
 std::string K4AWrapper::GetKinectSerial() {
   size_t n = 0;
   k4a_device_get_serialnum(device_, nullptr, &n);
-  
+
   char serial_str[n];
-  CHECK_EQ(k4a_device_get_serialnum(device_, serial_str, &n), 
+  CHECK_EQ(k4a_device_get_serialnum(device_, serial_str, &n),
       K4A_BUFFER_RESULT_SUCCEEDED);
   return std::string(serial_str);
 }
@@ -98,19 +98,21 @@ void K4AWrapper::Capture() {
   k4a_capture_t capture = NULL;
   switch (k4a_device_get_capture(device_, &capture, K4A_WAIT_INFINITE)) {
     case K4A_WAIT_RESULT_SUCCEEDED: {
-      if (config_.depth_mode == K4A_DEPTH_MODE_OFF && 
+      if (config_.depth_mode == K4A_DEPTH_MODE_OFF &&
           config_.color_resolution != K4A_COLOR_RESOLUTION_OFF) {
         // Only color.
         k4a_image_t color_image = k4a_capture_get_color_image(capture);
         ColorCallback(color_image);
         k4a_image_release(color_image);
-      } else if (config_.depth_mode != K4A_DEPTH_MODE_OFF && 
+      } else if (config_.depth_mode == K4A_DEPTH_MODE_NFOV_UNBINNED) {
+          SkeletonCallback(capture);
+      } else if (config_.depth_mode != K4A_DEPTH_MODE_OFF &&
                  config_.color_resolution == K4A_COLOR_RESOLUTION_OFF) {
         // Only depth.
         k4a_image_t depth_image = k4a_capture_get_depth_image(capture);
         DepthCallback(depth_image);
         k4a_image_release(depth_image);
-      } else if (config_.depth_mode != K4A_DEPTH_MODE_OFF && 
+      } else if (config_.depth_mode != K4A_DEPTH_MODE_OFF &&
                  config_.color_resolution != K4A_COLOR_RESOLUTION_OFF) {
         // Color and depth.
         k4a_image_t depth_image = k4a_capture_get_depth_image(capture);
@@ -118,7 +120,7 @@ void K4AWrapper::Capture() {
         if (depth_image == nullptr || color_image == nullptr) {
           // One of the frames was not received, drop this capture.
           if (FLAGS_v > 0) {
-            fprintf(stderr, 
+            fprintf(stderr,
                     "Received at least one invalid frame, "
                     "depth:0x%08lX, "
                     "color:0x%08lX\n",
