@@ -7,6 +7,7 @@ rgb_image_frame = "kinect_color";
 depth_image_frame = "kinect_depth";
 scan_frame = "base_link";
 scan_topic = "kinect_scan";
+human_topic = "human_states";
 registered_rgbd = true;
 
 rotation = {

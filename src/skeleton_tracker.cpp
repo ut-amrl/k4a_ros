@@ -38,6 +38,8 @@
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
+#include "amrl_msgs/HumanStateMsg.h"
+#include "amrl_msgs/HumanStateArrayMsg.h"
 
 #include "config_reader/config_reader.h"
 #include "math/geometry.h"
@@ -56,6 +58,8 @@ using k4a_wrapper::K4AWrapper;
 using std::max;
 using std::min;
 using std::vector;
+using amrl_msgs::HumanStateMsg;
+using amrl_msgs::HumanStateArrayMsg;
 
 using namespace math_util;
 
@@ -86,10 +90,45 @@ class SkeletonsToHumans: public K4AWrapper {
     // human_publisher_ =
         // n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
     InitMessages();
+    human_publisher_ =
+        n.advertise<HumanStateArrayMsg>(CONFIG_human_topic, 1, false);
     // Initial Extrinsics
     ext_translation_ = Vector3f(CONFIG_tx, CONFIG_ty, CONFIG_tz);
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
     k4abt_tracker_create(&calibration_, tracker_config, &tracker);
+  }
+
+  Eigen::Vector3f GetCentroid(const k4abt_skeleton_t& skeleton) {
+    Eigen::Vector3f centroid;
+    for (int i = 0; i < (int)K4ABT_JOINT_COUNT; i++) {
+      k4a_float3_t position = skeleton.joints[i].position;
+      k4abt_joint_confidence_level_t confidence_level =
+          skeleton.joints[i].confidence_level;
+      Eigen::Vector3f joint_pose(position.v[0], position.v[1], position.v[2]);
+      cout << "Pose: " << joint_pose.x() << ", " << joint_pose.y() << endl;
+      cout << "Confidence: " << confidence_level << endl;
+      if (confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM) {
+          centroid += joint_pose;
+      }
+    }
+    return centroid / (int)K4ABT_JOINT_COUNT;
+  }
+
+  void GetHumans(const k4abt_frame_t& body_frame) {
+      const size_t num_bodies = k4abt_frame_get_num_bodies(body_frame);
+      humans_.human_states.clear();
+      HumanStateMsg human;
+      for (size_t i = 0; i < num_bodies; i++) {
+          k4abt_skeleton_t skeleton;
+          k4abt_frame_get_body_skeleton(body_frame, i, &skeleton);
+          uint32_t id = k4abt_frame_get_body_id(body_frame, i);
+          const Eigen::Vector3f centroid = GetCentroid(skeleton);
+
+          human.id = id;
+          human.pose.x = centroid.x();
+          human.pose.y = centroid.y();
+          humans_.human_states.push_back(human);
+      }
   }
 
   void SkeletonCallback(k4a_capture_t capture) {
@@ -98,8 +137,6 @@ class SkeletonsToHumans: public K4AWrapper {
               tracker,
               capture,
               K4A_WAIT_INFINITE);
-      // Check and Release
-      k4a_capture_release(capture);
       if (queue_capture_result == K4A_WAIT_RESULT_TIMEOUT) {
           // It should never hit timeout when K4A_WAIT_INFINITE is set.
           printf("Error! Add capture to tracker process queue timeout!\n");
@@ -116,15 +153,13 @@ class SkeletonsToHumans: public K4AWrapper {
       if (pop_frame_result == K4A_WAIT_RESULT_SUCCEEDED) {
           // Successfully popped the body tracking result. Start your processing
           size_t num_bodies = k4abt_frame_get_num_bodies(body_frame);
-          // TODO(jaholtz) Figure out how to get centroid, etc.
-          // TODO(jaholtz) fill the human states message for each human
+          GetHumans(body_frame);
+          human_publisher_.publish(humans_);
           // detected
           printf("%zu bodies are detected!\n", num_bodies);
           // Remember to release the body frame once you finish using it
           k4abt_frame_release(body_frame);
-      } else if (pop_frame_result == K4A_WAIT_RESULT_TIMEOUT) {
-          //  It should never hit timeout when K4A_WAIT_INFINITE is set.
-          printf("Error! Pop body frame result timeout!\n");
+      } else if (pop_frame_result == K4A_WAIT_RESULT_TIMEOUT) { //  It should never hit timeout when K4A_WAIT_INFINITE is set.  printf("Error! Pop body frame result timeout!\n");
           return;
       } else {
           printf("Pop body frame result failed!\n");
@@ -137,11 +172,11 @@ class SkeletonsToHumans: public K4AWrapper {
 
  private:
   // Vector of Humans
-  // Last skeleton detection
   ros::Publisher human_publisher_;
   image_transport::ImageTransport image_transport_;
   // Translation component of extrinsics.
   Eigen::Vector3f ext_translation_;
+  HumanStateArrayMsg humans_;
   k4abt_tracker_t tracker = NULL;
 };
 
