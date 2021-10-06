@@ -56,6 +56,7 @@ using Eigen::Vector2f;
 using Eigen::Vector3f;
 using k4a_wrapper::K4AWrapper;
 using std::max;
+using std::map;
 using std::min;
 using std::vector;
 using amrl_msgs::HumanStateMsg;
@@ -76,6 +77,16 @@ CONFIG_FLOAT(roll, "rotation.roll");
 CONFIG_FLOAT(tx, "translation.x");
 CONFIG_FLOAT(ty, "translation.y");
 CONFIG_FLOAT(tz, "translation.z");
+CONFIG_FLOAT(max_track_length, "Maximum number of observations to retain");
+CONFIG_FLOAT(age_threshold, "How long to keep a stale track.");
+
+struct Track {
+    int id = -1;
+    int age = 0;
+    vector<double> times;
+    vector<HumanStateMsg> observations;
+    HumanStateMsg human;
+};
 
 class SkeletonsToHumans: public K4AWrapper {
  public:
@@ -95,7 +106,7 @@ class SkeletonsToHumans: public K4AWrapper {
     // Initial Extrinsics
     ext_translation_ = Vector3f(CONFIG_tx, CONFIG_ty, CONFIG_tz);
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
-    k4abt_tracker_create(&calibration_, tracker_config, &tracker);
+    k4abt_tracker_create(&calibration_, tracker_config, &tracker_);
   }
 
   Eigen::Vector3f GetCentroid(const k4abt_skeleton_t& skeleton) {
@@ -131,10 +142,101 @@ class SkeletonsToHumans: public K4AWrapper {
       }
   }
 
+  void CreateTrackSimple(const HumanStateMsg& human) {
+      Track track;
+      track.id = human.id;
+      track.age = 0;
+      track.times.push_back(current_time_);
+      track.observations.push_back(human);
+      track.human = human;
+      tracks_[track.id] = track;
+  }
+
+  void UpdateTrackSimple(const HumanStateMsg& human) {
+      // Track is updated this frame.
+      Track& track = tracks_[human.id];
+      track.age = 0;
+      track.observations.push_back(human);
+      track.human = human;
+      if (track.observations.size() >= CONFIG_max_track_length) {
+          track.observations.erase(track.observations.begin());
+          track.times.erase(track.times.begin());
+      }
+  }
+
+  void DrawHumans() {
+  }
+
+  void PruneTracks() {
+      map<int, Track> new_tracks;
+      for (auto& entry : tracks_) {
+          entry.second.age++;
+          if (entry.second.age <= CONFIG_age_threshold) {
+              new_tracks[entry.first] = entry.second;
+          }
+      }
+      tracks_ = new_tracks;
+  }
+
+  Vector2f GetVelocity(const Track& track) {
+      Vector2f sum(0,0);
+      for (size_t i = 1; i < track.times.size(); ++i) {
+          const HumanStateMsg obs_1 = track.observations[i - 1];
+          const HumanStateMsg obs_2 = track.observations[i];
+          const double time_1 = track.times[i - 1];
+          const double time_2 = track.times[i];
+          const Vector2f pose_1(obs_1.pose.x, obs_1.pose.y);
+          const Vector2f pose_2(obs_2.pose.x, obs_2.pose.y);
+
+          const double time_diff = time_2 - time_1;
+          const Vector2f vel = (pose_1 - pose_2) / time_diff;
+          sum += vel;
+      }
+      // The average/mean velocity
+      return sum / track.times.size();
+  }
+
+  void EstimateVelocity() {
+      for (auto& entry : tracks_) {
+          Track track = entry.second;
+          const Vector2f vel = GetVelocity(track);
+          track.human.translational_velocity.x = vel[0];
+          track.human.translational_velocity.y = vel[1];
+      }
+  }
+
+  // TODO(jaholtz) test sdk tracking, use kalman filter if necessary
+  void TrackHumans() {
+      // For each human check if it matches the id of a previous human.
+      for (const HumanStateMsg& human : humans_.human_states) {
+          // If distance is too large (or matches no id) create a new track:
+          // else, update the old one
+          if (tracks_.find(human.id) != tracks_.end()) {
+              UpdateTrackSimple(human);
+          } else {
+              CreateTrackSimple(human);
+          }
+      }
+
+      // Prune tracks that have not been updated recently
+      PruneTracks();
+
+      // Given the tracks, calculate the current velocity
+      EstimateVelocity();
+
+      // Publish the Human Detections
+      human_publisher_.publish(humans_);
+
+      // Visualize the Human Detections
+      DrawHumans();
+  }
+
   void SkeletonCallback(k4a_capture_t capture) {
+      // TODO(jaholtz) store the time of the observation and the last one
+      current_time_ = ros::Time::now().toSec();
       // Queue the result into the tracker
       k4a_wait_result_t queue_capture_result = k4abt_tracker_enqueue_capture(
-              tracker,
+              tracker_,
               capture,
               K4A_WAIT_INFINITE);
       if (queue_capture_result == K4A_WAIT_RESULT_TIMEOUT) {
@@ -149,22 +251,22 @@ class SkeletonsToHumans: public K4AWrapper {
       // Now we need to handle the result.
       k4abt_frame_t body_frame = NULL;
       k4a_wait_result_t pop_frame_result =
-          k4abt_tracker_pop_result(tracker, &body_frame, K4A_WAIT_INFINITE);
+          k4abt_tracker_pop_result(tracker_, &body_frame, K4A_WAIT_INFINITE);
       if (pop_frame_result == K4A_WAIT_RESULT_SUCCEEDED) {
           // Successfully popped the body tracking result. Start your processing
           size_t num_bodies = k4abt_frame_get_num_bodies(body_frame);
           GetHumans(body_frame);
-          human_publisher_.publish(humans_);
           // detected
           printf("%zu bodies are detected!\n", num_bodies);
           // Remember to release the body frame once you finish using it
           k4abt_frame_release(body_frame);
-      } else if (pop_frame_result == K4A_WAIT_RESULT_TIMEOUT) { //  It should never hit timeout when K4A_WAIT_INFINITE is set.  printf("Error! Pop body frame result timeout!\n");
+      } else if (pop_frame_result == K4A_WAIT_RESULT_TIMEOUT) {
           return;
       } else {
           printf("Pop body frame result failed!\n");
           return;
       }
+      TrackHumans();
   }
 
   void InitMessages() {
@@ -177,7 +279,9 @@ class SkeletonsToHumans: public K4AWrapper {
   // Translation component of extrinsics.
   Eigen::Vector3f ext_translation_;
   HumanStateArrayMsg humans_;
-  k4abt_tracker_t tracker = NULL;
+  k4abt_tracker_t tracker_ = NULL;
+  double current_time_;
+  map<int, Track> tracks_;
 };
 
 int main(int argc, char* argv[]) {
@@ -195,12 +299,9 @@ int main(int argc, char* argv[]) {
   SkeletonsToHumans interface(n, CONFIG_serial, config);
 
   while (ros::ok()) {
-    // TODO(jaholtz) add skeleton capture to the capture command
     interface.Capture();
     ros::spinOnce();
   }
   return 0;
 }
-
-
 

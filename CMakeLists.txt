@@ -82,17 +82,11 @@ TARGET_LINK_LIBRARIES(depth_to_lidar roslib roscpp pthread boost_system
     ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
-ADD_EXECUTABLE(test_skelly
-  src/test_skeleton.cpp)
-TARGET_LINK_LIBRARIES(test_skelly pthread
-    ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a k4abt gflags X11
-    ${BUILD_SPECIFIC_LIBRARIES})
-
-ROSBUILD_ADD_EXECUTABLE(skeletons_to_humans
-    src/skeleton_tracker.cpp
+ROSBUILD_ADD_EXECUTABLE(skeleton_detection
+    src/skeleton_detections.cpp
     src/k4a_wrapper.cc)
-ADD_DEPENDENCIES(skeletons_to_humans rosbuild_precompile)
-TARGET_LINK_LIBRARIES(skeletons_to_humans roslib roscpp pthread boost_system
+ADD_DEPENDENCIES(skeleton_detection rosbuild_precompile)
+TARGET_LINK_LIBRARIES(skeleton_detection roslib roscpp pthread boost_system
     ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4abt gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 

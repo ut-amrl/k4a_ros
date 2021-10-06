@@ -29,3 +29,7 @@ camera_angle_thresh = 50.0;
 min_dist_thresh = 0.05;
 num_ranges = 180;
 
+-- Skeleton Tracking
+max_track_length = 20
+min_track_length = 1
+age_threshold = 5
