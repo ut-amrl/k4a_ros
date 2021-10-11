@@ -139,8 +139,8 @@ class SkeletonsToHumans: public K4AWrapper {
           const Eigen::Vector3f centroid = GetCentroid(skeleton);
 
           human.id = id;
-          human.pose.x = centroid.z();
-          human.pose.y = centroid.x();
+          human.pose.x = centroid.z() / 1000.0;
+          human.pose.y = centroid.x() / 1000.0;
           humans_.human_states.push_back(human);
       }
   }
@@ -160,6 +160,7 @@ class SkeletonsToHumans: public K4AWrapper {
       Track& track = tracks_[human.id];
       track.age = 0;
       track.observations.push_back(human);
+      track.times.push_back(current_time_);
       track.human = human;
       if (track.observations.size() >= CONFIG_max_track_length) {
           track.observations.erase(track.observations.begin());
