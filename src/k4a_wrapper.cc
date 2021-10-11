@@ -106,6 +106,7 @@ void K4AWrapper::Capture() {
         k4a_image_release(color_image);
       } else if (config_.depth_mode == K4A_DEPTH_MODE_NFOV_UNBINNED) {
           SkeletonCallback(capture);
+          k4a_capture_release(capture);
       } else if (config_.depth_mode != K4A_DEPTH_MODE_OFF &&
                  config_.color_resolution == K4A_COLOR_RESOLUTION_OFF) {
         // Only depth.

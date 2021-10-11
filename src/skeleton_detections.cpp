@@ -80,8 +80,8 @@ CONFIG_FLOAT(roll, "rotation.roll");
 CONFIG_FLOAT(tx, "translation.x");
 CONFIG_FLOAT(ty, "translation.y");
 CONFIG_FLOAT(tz, "translation.z");
-CONFIG_FLOAT(max_track_length, "Maximum number of observations to retain");
-CONFIG_FLOAT(age_threshold, "How long to keep a stale track.");
+CONFIG_FLOAT(max_track_length, "max_track_length");
+CONFIG_FLOAT(age_threshold, "age_threshold");
 
 struct Track {
     int id = -1;
@@ -167,54 +167,6 @@ class SkeletonsToHumans: public K4AWrapper {
       }
   }
 
-  void DrawHumans() {
-      MarkerArray marker_array;
-      for (const HumanStateMsg& human : humans_.human_states) {
-          // Draw Each Human as a cylinder
-          Marker marker;
-          marker.header.frame_id = "base_link";
-          marker.type = marker.CYLINDER;
-          marker.action = marker.ADD;
-          marker.pose.position.x = human.pose.x;
-          marker.pose.position.y = human.pose.y;
-          marker.pose.position.z = 0.75;
-          marker.color.a = 1.0;
-          marker.scale.x = 0.25;
-          marker.scale.y = 0.25;
-          marker.scale.z = 1.75;
-          marker_array.markers.push_back(marker);
-          // Draw the velocities as arrows
-          Marker arrow_marker;
-          arrow_marker.header.frame_id = "base_link";
-          arrow_marker.type = marker.ARROW;
-          arrow_marker.action = marker.ADD;
-          geometry_msgs::Point point1;
-          geometry_msgs::Point point2;
-          point1.x = human.pose.x;
-          point1.y = human.pose.y;
-          point1.z = 0.75;
-          point2.x = human.pose.x + human.translational_velocity.x;
-          point2.y = human.pose.y + human.translational_velocity.y;
-          point2.z = 0.75;
-          arrow_marker.points.push_back(point1);
-          arrow_marker.points.push_back(point2);
-          arrow_marker.color.a = 1.0;
-          arrow_marker.scale.x = 0.25;
-          arrow_marker.scale.y = 0.25;
-          arrow_marker.scale.z = 0;
-          marker_array.markers.push_back(arrow_marker);
-      }
-      if (marker_array.markers.size() > 0) {
-          marker_pub_.publish(marker_array);
-      } else {
-          Marker marker;
-          marker.header.frame_id = "base_link";
-          marker.action = marker.DELETEALL;
-          marker_array.markers.push_back(marker);
-          marker_pub_.publish(marker_array);
-      }
-  }
-
   void PruneTracks() {
       map<int, Track> new_tracks;
       for (auto& entry : tracks_) {
@@ -246,7 +198,7 @@ class SkeletonsToHumans: public K4AWrapper {
 
   void EstimateVelocity() {
       for (auto& entry : tracks_) {
-          Track track = entry.second;
+          Track& track = entry.second;
           const Vector2f vel = GetVelocity(track);
           track.human.translational_velocity.x = vel[0];
           track.human.translational_velocity.y = vel[1];
@@ -285,7 +237,6 @@ class SkeletonsToHumans: public K4AWrapper {
       PublishHumans();
 
       // Visualize the Human Detections
-      DrawHumans();
   }
 
   void SkeletonCallback(k4a_capture_t capture) {
@@ -311,10 +262,7 @@ class SkeletonsToHumans: public K4AWrapper {
           k4abt_tracker_pop_result(tracker_, &body_frame, K4A_WAIT_INFINITE);
       if (pop_frame_result == K4A_WAIT_RESULT_SUCCEEDED) {
           // Successfully popped the body tracking result. Start your processing
-          size_t num_bodies = k4abt_frame_get_num_bodies(body_frame);
           GetHumans(body_frame);
-          // detected
-          printf("%zu bodies are detected!\n", num_bodies);
           // Remember to release the body frame once you finish using it
           k4abt_frame_release(body_frame);
       } else if (pop_frame_result == K4A_WAIT_RESULT_TIMEOUT) {
@@ -349,10 +297,8 @@ int main(int argc, char* argv[]) {
   ros::init(argc, argv, "k4a_ros");
   ros::NodeHandle n;
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  // Copy Configuration from Example
-  config.color_resolution = K4A_COLOR_RESOLUTION_720P;
-  config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
   config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
+  config.color_resolution = K4A_COLOR_RESOLUTION_OFF;
   config.synchronized_images_only = false;
   SkeletonsToHumans interface(n, CONFIG_serial, config);
 
