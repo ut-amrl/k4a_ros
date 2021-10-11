@@ -40,12 +40,13 @@
 #include "sensor_msgs/point_cloud2_iterator.h"
 #include "amrl_msgs/HumanStateMsg.h"
 #include "amrl_msgs/HumanStateArrayMsg.h"
-
 #include "config_reader/config_reader.h"
 #include "math/geometry.h"
 #include "k4a_wrapper.h"
 #include "util/helpers.h"
 #include "util/timer.h"
+#include "visualization_msgs/Marker.h"
+#include "visualization_msgs/MarkerArray.h"
 
 using std::string;
 using Eigen::Affine3f;
@@ -61,6 +62,8 @@ using std::min;
 using std::vector;
 using amrl_msgs::HumanStateMsg;
 using amrl_msgs::HumanStateArrayMsg;
+using visualization_msgs::MarkerArray;
+using visualization_msgs::Marker;
 
 using namespace math_util;
 
@@ -98,11 +101,11 @@ class SkeletonsToHumans: public K4AWrapper {
       const k4a_device_configuration_t& config)  :
       K4AWrapper(serial, config, false),
       image_transport_(n) {
-    // human_publisher_ =
-        // n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
     InitMessages();
     human_publisher_ =
         n.advertise<HumanStateArrayMsg>(CONFIG_human_topic, 1, false);
+    marker_pub_ =
+        n.advertise<MarkerArray>("visualization_marker_array", 1, false);
     // Initial Extrinsics
     ext_translation_ = Vector3f(CONFIG_tx, CONFIG_ty, CONFIG_tz);
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
@@ -165,6 +168,51 @@ class SkeletonsToHumans: public K4AWrapper {
   }
 
   void DrawHumans() {
+      MarkerArray marker_array;
+      for (const HumanStateMsg& human : humans_.human_states) {
+          // Draw Each Human as a cylinder
+          Marker marker;
+          marker.header.frame_id = "base_link";
+          marker.type = marker.CYLINDER;
+          marker.action = marker.ADD;
+          marker.pose.position.x = human.pose.x;
+          marker.pose.position.y = human.pose.y;
+          marker.pose.position.z = 0.75;
+          marker.color.a = 1.0;
+          marker.scale.x = 0.25;
+          marker.scale.y = 0.25;
+          marker.scale.z = 1.75;
+          marker_array.markers.push_back(marker);
+          // Draw the velocities as arrows
+          Marker arrow_marker;
+          arrow_marker.header.frame_id = "base_link";
+          arrow_marker.type = marker.ARROW;
+          arrow_marker.action = marker.ADD;
+          geometry_msgs::Point point1;
+          geometry_msgs::Point point2;
+          point1.x = human.pose.x;
+          point1.y = human.pose.y;
+          point1.z = 0.75;
+          point2.x = human.pose.x + human.translational_velocity.x;
+          point2.y = human.pose.y + human.translational_velocity.y;
+          point2.z = 0.75;
+          arrow_marker.points.push_back(point1);
+          arrow_marker.points.push_back(point2);
+          arrow_marker.color.a = 1.0;
+          arrow_marker.scale.x = 0.25;
+          arrow_marker.scale.y = 0.25;
+          arrow_marker.scale.z = 0;
+          marker_array.markers.push_back(arrow_marker);
+      }
+      if (marker_array.markers.size() > 0) {
+          marker_pub_.publish(marker_array);
+      } else {
+          Marker marker;
+          marker.header.frame_id = "base_link";
+          marker.action = marker.DELETEALL;
+          marker_array.markers.push_back(marker);
+          marker_pub_.publish(marker_array);
+      }
   }
 
   void PruneTracks() {
@@ -205,6 +253,15 @@ class SkeletonsToHumans: public K4AWrapper {
       }
   }
 
+  void PublishHumans() {
+      HumanStateArrayMsg humans;
+      for (auto& entry : tracks_) {
+          humans.human_states.push_back(entry.second.human);
+      }
+      human_publisher_.publish(humans);
+      humans_ = humans;
+  }
+
   // TODO(jaholtz) test sdk tracking, use kalman filter if necessary
   void TrackHumans() {
       // For each human check if it matches the id of a previous human.
@@ -225,7 +282,7 @@ class SkeletonsToHumans: public K4AWrapper {
       EstimateVelocity();
 
       // Publish the Human Detections
-      human_publisher_.publish(humans_);
+      PublishHumans();
 
       // Visualize the Human Detections
       DrawHumans();
@@ -275,6 +332,7 @@ class SkeletonsToHumans: public K4AWrapper {
  private:
   // Vector of Humans
   ros::Publisher human_publisher_;
+  ros::Publisher marker_pub_;
   image_transport::ImageTransport image_transport_;
   // Translation component of extrinsics.
   Eigen::Vector3f ext_translation_;
