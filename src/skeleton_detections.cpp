@@ -114,18 +114,18 @@ class SkeletonsToHumans: public K4AWrapper {
 
   Eigen::Vector3f GetCentroid(const k4abt_skeleton_t& skeleton) {
     Eigen::Vector3f centroid;
+    int count = 0;
     for (int i = 0; i < (int)K4ABT_JOINT_COUNT; i++) {
       k4a_float3_t position = skeleton.joints[i].position;
       k4abt_joint_confidence_level_t confidence_level =
           skeleton.joints[i].confidence_level;
       Eigen::Vector3f joint_pose(position.v[0], position.v[1], position.v[2]);
-      cout << "Pose: " << joint_pose.x() << ", " << joint_pose.y() << endl;
-      cout << "Confidence: " << confidence_level << endl;
       if (confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM) {
           centroid += joint_pose;
+          count++;
       }
     }
-    return centroid / (int)K4ABT_JOINT_COUNT;
+    return centroid / count;
   }
 
   void GetHumans(const k4abt_frame_t& body_frame) {
@@ -140,7 +140,7 @@ class SkeletonsToHumans: public K4AWrapper {
 
           human.id = id;
           human.pose.x = centroid.z() / 1000.0;
-          human.pose.y = centroid.x() / 1000.0;
+          human.pose.y = -centroid.x() / 1000.0;
           humans_.human_states.push_back(human);
       }
   }
