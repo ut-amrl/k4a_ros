@@ -90,6 +90,14 @@ TARGET_LINK_LIBRARIES(skeleton_detection roslib roscpp pthread boost_system
     ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4abt gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
+ROSBUILD_ADD_EXECUTABLE(skeleton_tracker
+    src/skeleton_tracker.cpp
+    src/k4a_wrapper.cc)
+ADD_DEPENDENCIES(skeleton_tracker rosbuild_precompile)
+TARGET_LINK_LIBRARIES(skeleton_tracker roslib roscpp pthread boost_system
+    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4abt gflags X11
+    ${BUILD_SPECIFIC_LIBRARIES})
+
 IF(CUDA_FOUND)
   ADD_LIBRARY(cuda_lib src/processing_kernels_cuda.cu)
   ROSBUILD_ADD_EXECUTABLE(depth_to_costmap

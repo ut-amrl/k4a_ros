@@ -18,6 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#include <bits/stdint-uintn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <k4a/k4a.hpp>
@@ -108,8 +109,8 @@ class SkeletonsToHumans: public K4AWrapper {
         n.advertise<MarkerArray>("visualization_marker_array", 1, false);
     // Initial Extrinsics
     ext_translation_ = Vector3f(CONFIG_tx, CONFIG_ty, CONFIG_tz);
-    k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
-    k4abt_tracker_create(&calibration_, tracker_config, &tracker_);
+    // k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
+    // k4abt_tracker_create(&calibration_, tracker_config, &tracker_);
   }
 
   Eigen::Vector3f GetCentroid(const k4abt_skeleton_t& skeleton) {
@@ -128,14 +129,16 @@ class SkeletonsToHumans: public K4AWrapper {
     return centroid / count;
   }
 
-  void GetHumans(const k4abt_frame_t& body_frame) {
-      const size_t num_bodies = k4abt_frame_get_num_bodies(body_frame);
+  void GetHumans(k4abt::frame body_frame) {
+      // const size_t num_bodies = k4abt_frame_get_num_bodies(body_frame);
+      const uint32_t num_bodies = body_frame.get_num_bodies();
       humans_.human_states.clear();
       HumanStateMsg human;
       for (size_t i = 0; i < num_bodies; i++) {
+          k4abt_body_t body = body_frame.get_body(i);
           k4abt_skeleton_t skeleton;
-          k4abt_frame_get_body_skeleton(body_frame, i, &skeleton);
-          uint32_t id = k4abt_frame_get_body_id(body_frame, i);
+          skeleton = body.skeleton;
+          uint32_t id = body.id;
           const Eigen::Vector3f centroid = GetCentroid(skeleton);
 
           human.id = id;
@@ -291,22 +294,82 @@ class SkeletonsToHumans: public K4AWrapper {
   map<int, Track> tracks_;
 };
 
-int main(int argc, char* argv[]) {
-  google::InitGoogleLogging(argv[0]);
-  google::ParseCommandLineFlags(&argc, &argv, false);
-  config_reader::ConfigReader reader({FLAGS_config_file});
-  ros::init(argc, argv, "k4a_ros");
-  ros::NodeHandle n;
-  k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
-  config.color_resolution = K4A_COLOR_RESOLUTION_OFF;
-  config.synchronized_images_only = false;
-  SkeletonsToHumans interface(n, CONFIG_serial, config);
+// int main(int argc, char* argv[]) {
+  // google::InitGoogleLogging(argv[0]);
+  // google::ParseCommandLineFlags(&argc, &argv, false);
+  // config_reader::ConfigReader reader({FLAGS_config_file});
+  // ros::init(argc, argv, "k4a_ros");
+  // ros::NodeHandle n;
+  // k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+  // config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
+  // config.color_resolution = K4A_COLOR_RESOLUTION_OFF;
+  // config.synchronized_images_only = false;
+  // SkeletonsToHumans interface(n, CONFIG_serial, config);
 
-  while (ros::ok()) {
-    interface.Capture();
-    ros::spinOnce();
-  }
-  return 0;
+  // while (ros::ok()) {
+    // interface.Capture();
+    // ros::spinOnce();
+  // }
+  // return 0;
+// }
+
+int main(int argc, char* argv[]) {
+    google::InitGoogleLogging(argv[0]);
+    google::ParseCommandLineFlags(&argc, &argv, false);
+    config_reader::ConfigReader reader({FLAGS_config_file});
+    ros::init(argc, argv, "k4a_ros");
+    ros::NodeHandle n;
+    k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+    config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
+    config.color_resolution = K4A_COLOR_RESOLUTION_OFF;
+    config.synchronized_images_only = false;
+    SkeletonsToHumans interface(n, CONFIG_serial, config);
+    try {
+        k4a_device_configuration_t device_config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+        device_config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
+
+        k4a::device device = k4a::device::open(0);
+        device.start_cameras(&device_config);
+
+        k4a::calibration sensor_calibration =
+            device.get_calibration(device_config.depth_mode, device_config.color_resolution);
+
+        k4abt::tracker tracker = k4abt::tracker::create(sensor_calibration);
+
+        while (ros::ok()) {
+            k4a::capture sensor_capture;
+            if (device.get_capture(&sensor_capture,
+                std::chrono::milliseconds(K4A_WAIT_INFINITE))) {
+
+                if (!tracker.enqueue_capture(sensor_capture))
+                {
+                    // It should never hit timeout when K4A_WAIT_INFINITE is set.
+                    std::cout << "Error! Add capture to tracker process queue timeout!" << std::endl;
+                    break;
+                }
+
+                k4abt::frame body_frame = tracker.pop_result();
+                if (body_frame != nullptr) {
+                    interface.GetHumans(body_frame);
+                    interface.TrackHumans();
+                }
+                else {
+                    std::cout << "Error! Pop body frame time out!" << std::endl;
+                    break;
+                }
+            }
+            else {
+                // It should never hit time out when K4A_WAIT_INFINITE is set.
+                std::cout << "Error! Get depth frame time out!" << std::endl;
+                break;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Failed with exception:" << std::endl
+            << "    " << e.what() << std::endl;
+        return 1;
+    }
+
+    return 0;
 }
 
