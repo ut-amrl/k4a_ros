@@ -8,22 +8,23 @@ SET(CMAKE_AUTOUIC ON)
 SET(CMAKE_CXX_FLAGS "-march=native -Wall -Werror -g")
 set(CMAKE_CXX_STANDARD 14)
 
-FIND_PACKAGE(CUDA)
+# FIND_PACKAGE(CUDA)
 
-IF("${CUDA_VERSION_STRING}" STREQUAL "")
-  SET(CUDA_FOUND False)
-ELSE()
-  MESSAGE(STATUS "CUDA detected, enabling GPU code")
-  ENABLE_LANGUAGE(CUDA)
-  SET(CUDA_FOUND True)
-  ADD_DEFINITIONS(-DCUDA_ENABLED)
-ENDIF()
+# IF("${CUDA_VERSION_STRING}" STREQUAL "")
+  # SET(CUDA_FOUND False)
+# ELSE()
+  # MESSAGE(STATUS "CUDA detected, enabling GPU code")
+  # ENABLE_LANGUAGE(CUDA)
+  # SET(CUDA_FOUND True)
+  # ADD_DEFINITIONS(-DCUDA_ENABLED)
+# ENDIF()
 
-MESSAGE(STATUS "CUDA: ${CUDA_FOUND} Version: ${CUDA_VERSION_STRING} Compiler: ${CMAKE_CUDA_COMPILER}")
+
+# MESSAGE(STATUS "CUDA: ${CUDA_FOUND} Version: ${CUDA_VERSION_STRING} Compiler: ${CMAKE_CUDA_COMPILER}")
 
 IF(${CMAKE_BUILD_TYPE} MATCHES "Release")
   MESSAGE(STATUS "Additional Flags for Release mode")
-  SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fopenmp -fno-builtin-malloc \
+  SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS}  -fno-builtin-malloc \
       -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -O3 -DNDEBUG")
   SET(BUILD_SPECIFIC_LIBRARIES "tcmalloc")
 ELSEIF(${CMAKE_BUILD_TYPE} MATCHES "Debug")
@@ -36,6 +37,7 @@ MESSAGE(STATUS "SOURCE DIR: ${PROJECT_SOURCE_DIR}")
 
 FIND_PACKAGE(Lua51 REQUIRED)
 FIND_PACKAGE(Eigen3 REQUIRED)
+find_package(PCL REQUIRED)
 
 INCLUDE($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 ROSBUILD_INIT()
@@ -49,6 +51,7 @@ INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src)
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/shared)
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src/config_reader/include)
+INCLUDE_DIRECTORIES(${PCL_INCLUDE_DIRS})
 
 ADD_SUBDIRECTORY(src/shared)
 
@@ -98,30 +101,36 @@ TARGET_LINK_LIBRARIES(skeleton_tracker roslib roscpp pthread boost_system
     ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4abt gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
-IF(CUDA_FOUND)
-  ADD_LIBRARY(cuda_lib src/processing_kernels_cuda.cu)
-  ROSBUILD_ADD_EXECUTABLE(depth_to_costmap
-      src/depth_to_costmap.cc
-      src/k4a_wrapper.cc)
-  ADD_DEPENDENCIES(depth_to_costmap rosbuild_precompile)
-  TARGET_LINK_LIBRARIES(depth_to_costmap roslib roscpp pthread boost_system
-      ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
-      ${BUILD_SPECIFIC_LIBRARIES})
+ROSBUILD_ADD_EXECUTABLE(yolo_tracker src/YoloToTracks.cc)
+ADD_DEPENDENCIES(yolo_tracker rosbuild_precompile)
+TARGET_LINK_LIBRARIES(yolo_tracker roslib roscpp pthread boost_system
+  rt rosbag amrl_shared_lib X11 ${PCL_LIBRARIES}
+  ${BUILD_SPECIFIC_LIBRARIES})
 
-  ROSBUILD_ADD_EXECUTABLE(cuda_depth_to_lidar
-    src/cuda_depth_to_lidar.cc
-    src/k4a_wrapper.cc)
-  ADD_DEPENDENCIES(cuda_depth_to_lidar rosbuild_precompile)
-  TARGET_LINK_LIBRARIES(cuda_depth_to_lidar roslib roscpp pthread boost_system
-      ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
-      ${BUILD_SPECIFIC_LIBRARIES})
+# IF(CUDA_FOUND)
+  # ADD_LIBRARY(cuda_lib src/processing_kernels_cuda.cu)
+  # ROSBUILD_ADD_EXECUTABLE(depth_to_costmap
+      # src/depth_to_costmap.cc
+      # src/k4a_wrapper.cc)
+  # ADD_DEPENDENCIES(depth_to_costmap rosbuild_precompile)
+  # TARGET_LINK_LIBRARIES(depth_to_costmap roslib roscpp pthread boost_system
+      # ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
+      # ${BUILD_SPECIFIC_LIBRARIES})
 
-  ADD_EXECUTABLE(cuda_tests
-                 src/cuda_tests.cc)
-  TARGET_LINK_LIBRARIES(cuda_tests
-                        cuda_lib
-                        gtest
-                        gtest_main
-                        ${BUILD_SPECIFIC_LIBRARIES})
-ENDIF()
+  # ROSBUILD_ADD_EXECUTABLE(cuda_depth_to_lidar
+    # src/cuda_depth_to_lidar.cc
+    # src/k4a_wrapper.cc)
+  # ADD_DEPENDENCIES(cuda_depth_to_lidar rosbuild_precompile)
+  # TARGET_LINK_LIBRARIES(cuda_depth_to_lidar roslib roscpp pthread boost_system
+      # ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
+      # ${BUILD_SPECIFIC_LIBRARIES})
+
+  # ADD_EXECUTABLE(cuda_tests
+                 # src/cuda_tests.cc)
+  # TARGET_LINK_LIBRARIES(cuda_tests
+                        # cuda_lib
+                        # gtest
+                        # gtest_main
+                        # ${BUILD_SPECIFIC_LIBRARIES})
+# ENDIF()
 
