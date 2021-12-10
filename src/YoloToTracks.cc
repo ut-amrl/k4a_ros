@@ -34,11 +34,11 @@ Publisher human_pub_;
 Publisher cloud_pub_;
 
 // Parameters
-const static int kMinTrackLength = 5;
-const static int kMaxTrackLength = 20;
+const static int kMinTrackLength = 2;
+const static int kMaxTrackLength = 10;
 const static int kMaxAge = 5;
 const float kDetectionThreshold = 0.4;
-const float kDistThresh = 1.0;
+const float kDistThresh = 0.5;
 // Color Inrinsics
 const static float cx = 642.437622;
 const static float cy = 363.448151;
@@ -125,8 +125,10 @@ Vector2f GetVelocity(const Track& track) {
 // Estimates the Velocities and Creates the HumanStateArrayMsg
 void EstimateVelocity() {
     human_states_.human_states.clear();
+    int count = 0;
     // For track in track
     for (const Track& track : tracks_) {
+        count++;
         if (track.times_.size() < kMinTrackLength) {
             continue;
         }
@@ -137,7 +139,9 @@ void EstimateVelocity() {
         const Vector2f velocity = GetVelocity(track);
         human.translational_velocity.x = velocity.x();
         human.translational_velocity.y = velocity.y();
-        human_states_.human_states.push_back(human);
+        if (track.poses_.back().norm() > 0.01) {
+            human_states_.human_states.push_back(human);
+        }
     }
 }
 
@@ -174,11 +178,13 @@ Vector3f GetFromLidar(const int u,
 
     // Calculate Average of all points discovered in detection
     // TODO(jaholtz) determine if this is actually reasonable
-    Vector3f average_point;
+    Vector3f average_point(0,0);
     for (const Vector3f& point : observed_points) {
         average_point += point;
     }
-    average_point = average_point / observed_points.size();
+    if (observed_points.size() > 0) {
+        average_point = average_point / observed_points.size();
+    }
 
     sensor_msgs::PointCloud2 output;
     pcl::toROSMsg(pcl_cloud, output);
@@ -206,7 +212,8 @@ vector<Vector3f> GetObservation() {
 }
 
 int GetClosest(const Vector3f& pose,
-                float& dist) {
+                float& dist,
+               const double& now) {
     if (tracks_.size() < 1) return -1;
 
     float best_dist = FLT_MAX;
@@ -217,7 +224,7 @@ int GetClosest(const Vector3f& pose,
         const float dist = (track.poses_.back() - pose2).norm();
         if (dist < best_dist) {
             best_dist = dist;
-
+            best_index = current_index;
         }
         current_index++;
     }
@@ -246,9 +253,9 @@ void UpdatePose(const Vector3f& pose, const int index) {
 
 void UpdateTrack(const Vector3f& pose, const double& now, int index) {
     tracks_[index].age_ = 0;
-    if (now - tracks_[index].times_.back() < 0.000001) {
-        UpdatePose(pose, index);
-    } else {
+    // if (now - tracks_[index].times_.back() < 0.000001) {
+        // UpdatePose(pose, index);
+    // } else {
         const Vector2f pose2d(pose.x(), pose.y());
         if (tracks_[index].poses_.size() >= kMaxTrackLength) {
             tracks_[index].poses_.erase(tracks_[index].poses_.begin());
@@ -256,7 +263,7 @@ void UpdateTrack(const Vector3f& pose, const double& now, int index) {
         }
         tracks_[index].poses_.push_back(pose2d);
         tracks_[index].times_.push_back(now);
-    }
+    // }
 }
 
 void PruneTracks() {
@@ -281,7 +288,7 @@ void UpdateTracks() {
     // Using the Observations either associate to existing one or create new track
     for (const Vector3f& pose : poses) {
         float dist = FLT_MAX;
-        const int index = GetClosest(pose, dist);
+        const int index = GetClosest(pose, dist, now);
         if (dist > kDistThresh) {
             CreateTrack(pose, now);
         } else {
