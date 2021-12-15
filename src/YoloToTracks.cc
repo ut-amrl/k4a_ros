@@ -1,4 +1,5 @@
 #include <cfloat>
+#include <cmath>
 #include <vector>
 
 #include "amrl_msgs/HumanStateArrayMsg.h"
@@ -34,11 +35,11 @@ Publisher human_pub_;
 Publisher cloud_pub_;
 
 // Parameters
-const static int kMinTrackLength = 2;
-const static int kMaxTrackLength = 10;
-const static int kMaxAge = 5;
+const static int kMinTrackLength = 10;
+const static int kMaxTrackLength = 20;
+const static int kMaxAge = 10;
 const float kDetectionThreshold = 0.4;
-const float kDistThresh = 0.5;
+const float kDistThresh =  0.5;
 // Color Inrinsics
 const static float cx = 642.437622;
 const static float cy = 363.448151;
@@ -89,14 +90,18 @@ void LidarCb(const PointCloud2& msg) {
     vector<Vector3f> new_cloud;
     vector<Vector2f> image_coords;
     for (const auto point : cloud.points) {
-        if (fabs(point.x) < 10 && fabs(point.y) < 10 and fabs(point.x) > 0) {
+        if (fabs(point.x) < 10 && fabs(point.y) < 10 and fabs(point.x) > 0 &&
+            !std::isnan(point.x) && !std::isnan(point.y) && !std::isnan(point.z)) {
             const Vector3f c_point(point.x, point.y, point.z);
-            new_cloud.push_back(c_point);
-            Vector3f X(-point.y, -point.z, point.x);
-            Vector3f Y = X + translation;
+            Vector3f X(point.x, point.y, point.z);
+            X = R * X + translation;
+            Vector3f Y(-X.y(), -X.z(), X.x());
             Y = intrinsics * Y;
-            Vector2f coord(Y[0] / Y[2], Y[1] / Y[2]);
-            image_coords.push_back(coord);
+            if (Y[2] > 0) {
+                Vector2f coord(Y[0] / Y[2], Y[1] / Y[2]);
+                image_coords.push_back(coord);
+                new_cloud.push_back(c_point);
+            }
         }
     }
     current_cloud_ = new_cloud;
@@ -164,7 +169,7 @@ Vector3f GetFromLidar(const int u,
                 const float wz = cloud.z();
                 // Only care about things within a certain range
                 // need to check the units on these.
-                if (wx > 0 && wx < 5 and fabs(wy) < 5) {
+                if (wx > 0 && wx < 15 and fabs(wy) < 10) {
                     observed_points.push_back(cloud);
                     pcl::PointXYZ pcl_point;
                     pcl_point.x = wx;
@@ -178,13 +183,18 @@ Vector3f GetFromLidar(const int u,
 
     // Calculate Average of all points discovered in detection
     // TODO(jaholtz) determine if this is actually reasonable
-    Vector3f average_point(0,0);
+    Vector3f average_point(0,0,0);
     for (const Vector3f& point : observed_points) {
         average_point += point;
     }
     if (observed_points.size() > 0) {
         average_point = average_point / observed_points.size();
     }
+    // if (fabs(average_point.y()) > 1000) {
+        // for (const Vector3f& point : observed_points) {
+            // // cout << "Point: " << point.x() << ", " << point.y() << endl;
+        // }
+    // }
 
     sensor_msgs::PointCloud2 output;
     pcl::toROSMsg(pcl_cloud, output);
@@ -203,8 +213,8 @@ vector<Vector3f> GetObservation() {
             const int u = box.xmin + ((box.xmax - box.xmin) / 2);
             const int v = box.ymin + ((box.ymax - box.ymin) / 2);
             Vector2f pose_estimate(0, 0);
-            const Vector3f pose = GetFromLidar(u, v, (box.xmax - box.xmin) / 2,
-                                                     (box.ymax - box.ymin) / 2);
+            const Vector3f pose = GetFromLidar(u, v, (box.xmax - box.xmin) / 4,
+                                                     (box.ymax - box.ymin));
             poses.push_back(pose);
         }
     }
