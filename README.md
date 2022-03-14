@@ -25,6 +25,7 @@ Azure Kinect ROS drivers
     ```
     sudo apt install libk4a1.4-dev k4a-tools
     ```
+1. Add the file [99-k4a.rules](99-k4a.rules) to `/etc/udev/rules.d` to allow access to the kinect device, and reboot to apply the changes.
 
 ## Compile
 
