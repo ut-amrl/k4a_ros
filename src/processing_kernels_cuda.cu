@@ -168,8 +168,8 @@ void GetCudaCapabilities() {
     printf("  Device name: %s\n", prop.name);
     printf("  Compute Capability: %d.%d\n", prop.major, prop.minor);
     printf("  Threads per block: %d\n", prop.maxThreadsPerBlock);
-    printf("  Blocks per multiprocessor: %d\n", 
-        prop.maxBlocksPerMultiProcessor);
+    //printf("  Blocks per multiprocessor: %d\n", 
+    //    prop.maxBlocksPerMultiProcessor);
     printf("  Multiprocessor count: %d\n", prop.multiProcessorCount);
     
     printf("  Memory Clock Rate (KHz): %d\n",
