@@ -1,0 +1,34 @@
+From 0ca7e7652dd6bb7062d60bbff2522172d2e66177 Mon Sep 17 00:00:00 2001
+From: Corrie Van Sice <corrievansice@gmail.com>
+Date: Tue, 12 Apr 2022 16:57:24 -0500
+Subject: [PATCH] removed conflict for cuda 10.2
+
+---
+ src/processing_kernels_cuda.cu | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/processing_kernels_cuda.cu b/src/processing_kernels_cuda.cu
+index a9af585..1e6a806 100644
+--- a/src/processing_kernels_cuda.cu
++++ b/src/processing_kernels_cuda.cu
+@@ -168,8 +168,8 @@ void GetCudaCapabilities() {
+     printf("  Device name: %s\n", prop.name);
+     printf("  Compute Capability: %d.%d\n", prop.major, prop.minor);
+     printf("  Threads per block: %d\n", prop.maxThreadsPerBlock);
+-    printf("  Blocks per multiprocessor: %d\n", 
+-        prop.maxBlocksPerMultiProcessor);
++    //printf("  Blocks per multiprocessor: %d\n", 
++    //    prop.maxBlocksPerMultiProcessor);
+     printf("  Multiprocessor count: %d\n", prop.multiProcessorCount);
+     
+     printf("  Memory Clock Rate (KHz): %d\n",
+@@ -180,4 +180,4 @@ void GetCudaCapabilities() {
+            2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
+   }
+ }
+-}  // namespace processing_kernels
+\ No newline at end of file
++}  // namespace processing_kernels
+-- 
+2.17.1
+
