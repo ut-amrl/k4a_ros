@@ -41,8 +41,6 @@
 using Eigen::Vector3f;
 using k4a::playback;
 
-int NUM_FRAMES = 301;
-
 namespace k4a_wrapper {
 
 K4AWrapper::K4AWrapper(
@@ -53,7 +51,6 @@ K4AWrapper::K4AWrapper(
         register_images_(enable_image_registration),
         playback_handle_(playback_handle),
         playback_(true),
-        ctr_(0),
         config_(config) {
 
   k4a_result_t result = k4a_playback_get_calibration(playback_handle, &calibration_);
@@ -124,10 +121,6 @@ void K4AWrapper::OpenDevice(const std::string& serial) {
 
 bool K4AWrapper::CaptureFromPlayback() {
   k4a_capture_t capture = NULL;
-  ctr_++;
-  if (ctr_ > NUM_FRAMES) {
-    return false;
-  }
   switch (k4a_playback_get_next_capture(playback_handle_, &capture)) {
     case K4A_STREAM_RESULT_SUCCEEDED: {
       if (config_.depth_mode == K4A_DEPTH_MODE_OFF && 

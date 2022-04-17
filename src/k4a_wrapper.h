@@ -62,7 +62,6 @@ class K4AWrapper {
   const bool register_images_;
   k4a_playback_t playback_handle_;
   const bool playback_;
-  int ctr_;
  
  public:
   k4a_calibration_t calibration_;
