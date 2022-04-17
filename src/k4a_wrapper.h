@@ -22,6 +22,7 @@
 
 #include "eigen3/Eigen/Dense"
 #include "k4a/k4a.h"
+#include "k4arecord/playback.hpp"
 
 namespace k4a_wrapper {
 
@@ -32,8 +33,12 @@ class K4AWrapper {
   K4AWrapper(const std::string& serial, 
              const k4a_device_configuration_t& config,
              bool enable_image_registration);
+  
+  K4AWrapper(const k4a_device_configuration_t& config,
+             bool enable_image_registration,
+             k4a_playback_t playback_handle);
 
-  void Capture();
+  bool Capture();
 
   virtual void DepthCallback(k4a_image_t image) {}
   virtual void ColorCallback(k4a_image_t image) {}
@@ -43,6 +48,8 @@ class K4AWrapper {
       k4a_image_t image_rgb, k4a_image_t image_depth) {}
 
  private:
+  void CaptureFromDevice();
+  bool CaptureFromPlayback();
   void OpenDevice(const std::string& serial);
   void InitLookups();
   std::string GetKinectSerial();
@@ -50,8 +57,12 @@ class K4AWrapper {
  private:
 
   k4a_device_t device_;
+  
   k4a_transformation_t transformation_;
   const bool register_images_;
+  k4a_playback_t playback_handle_;
+  const bool playback_;
+  int ctr_;
  
  public:
   k4a_calibration_t calibration_;

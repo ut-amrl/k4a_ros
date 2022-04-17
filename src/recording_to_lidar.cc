@@ -62,7 +62,8 @@ using namespace math_util;
 
 DECLARE_int32(v);
 DEFINE_bool(depth, false, "Publish depth images");
-DEFINE_bool(points, false, "Publish point cloud");
+DEFINE_bool(points, true, "Publish point cloud");
+DEFINE_string(filename, "./output.mkv", "Filename of recording");
 DEFINE_bool(rgb, false, "Publish color images");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
 
@@ -91,14 +92,15 @@ CONFIG_FLOAT(ground_dist_thresh, "ground_dist_thresh");
 CONFIG_FLOAT(camera_angle_thresh, "camera_angle_thresh");
 CONFIG_FLOAT(min_dist_thresh, "min_dist_thresh");
 
-class DepthToLidar : public K4AWrapper {
+class RecordingToLidar : public K4AWrapper {
  public:
 
-  DepthToLidar(
+  RecordingToLidar(
       ros::NodeHandle& n, 
       const std::string& serial,
-      const k4a_device_configuration_t& config)  :
-      K4AWrapper(serial, config, CONFIG_registered),
+      const k4a_device_configuration_t& config,
+      k4a_playback_t playback_handle)  :
+      K4AWrapper(config, CONFIG_registered, playback_handle),
       image_transport_(n) {
     costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
@@ -249,21 +251,25 @@ class DepthToLidar : public K4AWrapper {
   void DepthToPointCloud(k4a_image_t color_image, k4a_image_t depth_image) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
-    uint32_t* rgb_data = nullptr;
-    if (CONFIG_registered && color_image != nullptr) {
-        rgb_data = 
-            reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
-    }
+    // uint32_t* rgb_data = nullptr;
+    // if (CONFIG_registered && color_image != nullptr) {
+    //     rgb_data = 
+    //         reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
+    // }
     uint16_t* depth_data = 
         reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
+
+    // sometimes accessing rgb_data[points_.size()-1] causes segfault,
+    // some rgb frames are dropped during recording
     for (size_t i = 0; i < points_.size(); ++i) {
       points_[i] = ext_translation_ + 
           (static_cast<float>(depth_data[i]) * rgbd_ray_lookup_[i]);
-      if (rgb_data) {
-        colors_[i] = rgb_data[i];
-      } else {
+
+      // if (rgb_data) {
+      //   colors_[i] = rgb_data[i];
+      // } else {
         colors_[i] = 0xC0C0C0LU;
-      }
+      // }
     }
   }
 
@@ -322,6 +328,7 @@ class DepthToLidar : public K4AWrapper {
   void PublishHeightMap() {
   }
 
+  int i = 0;
   void RGBDCallback(k4a_image_t color_image, k4a_image_t depth_image) {
     if (color_image != nullptr && FLAGS_rgb) {
       PublishRGBImage(color_image);
@@ -330,6 +337,7 @@ class DepthToLidar : public K4AWrapper {
     if (depth_image == nullptr) return;
     DepthToPointCloud(color_image, depth_image);
     PublishScan();
+    // printf("Frame #%d\n", i++);
     if (FLAGS_depth) {
       PublishDepthImage(depth_image);
     }
@@ -385,12 +393,28 @@ int main(int argc, char* argv[]) {
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
   config.synchronized_images_only = false;
-  DepthToLidar interface(n, CONFIG_serial, config);
 
-  while (ros::ok()) {
-    interface.Capture();
-    ros::spinOnce();
+  std::string playback_fname = FLAGS_filename;
+  k4a_playback_t playback_handle = NULL;
+  if (k4a_playback_open(playback_fname.c_str(), &playback_handle) != K4A_RESULT_SUCCEEDED)
+  {
+      printf("Failed to open recording.\n");
+      return 0;
   }
+
+  RecordingToLidar interface(n, CONFIG_serial, config, playback_handle);
+
+  bool success = true;
+
+  RateLoop loop(10.0);
+  while (ros::ok() && success) {
+    success = interface.Capture();
+    ros::spinOnce();
+    loop.Sleep();
+  }
+
+  k4a_playback_close(playback_handle);
+
   return 0;
 }
 

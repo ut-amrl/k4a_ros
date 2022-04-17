@@ -57,21 +57,21 @@ ROSBUILD_ADD_EXECUTABLE(stream_pcl
     src/k4a_wrapper.cc)
 ADD_DEPENDENCIES(stream_pcl rosbuild_precompile)
 TARGET_LINK_LIBRARIES(stream_pcl roslib roscpp pthread boost_system
-    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11
+    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4arecord gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
 ADD_EXECUTABLE(save_rgbd_images
     src/save_rgbd_images.cc
     src/k4a_wrapper.cc)
 TARGET_LINK_LIBRARIES(save_rgbd_images pthread
-    ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a gflags X11
+    ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a k4arecord gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
 ADD_EXECUTABLE(get_calibration
     src/get_calibration.cc
     src/k4a_wrapper.cc)
 TARGET_LINK_LIBRARIES(get_calibration pthread
-    ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a gflags X11
+    ${LUA_LIBRARIES} rt glog amrl_shared_lib k4a k4arecord gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
 ROSBUILD_ADD_EXECUTABLE(depth_to_lidar
@@ -79,7 +79,15 @@ ROSBUILD_ADD_EXECUTABLE(depth_to_lidar
     src/k4a_wrapper.cc)
 ADD_DEPENDENCIES(depth_to_lidar rosbuild_precompile)
 TARGET_LINK_LIBRARIES(depth_to_lidar roslib roscpp pthread boost_system
-    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11
+    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4arecord gflags X11
+    ${BUILD_SPECIFIC_LIBRARIES})
+
+ROSBUILD_ADD_EXECUTABLE(recording_to_lidar
+    src/recording_to_lidar.cc
+    src/k4a_wrapper.cc)
+ADD_DEPENDENCIES(recording_to_lidar rosbuild_precompile)
+TARGET_LINK_LIBRARIES(recording_to_lidar roslib roscpp pthread boost_system
+    ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4arecord gflags X11
     ${BUILD_SPECIFIC_LIBRARIES})
 
 IF(CUDA_FOUND)
@@ -89,7 +97,7 @@ IF(CUDA_FOUND)
       src/k4a_wrapper.cc)
   ADD_DEPENDENCIES(depth_to_costmap rosbuild_precompile)
   TARGET_LINK_LIBRARIES(depth_to_costmap roslib roscpp pthread boost_system
-      ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
+      ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4arecord gflags X11 cuda_lib
       ${BUILD_SPECIFIC_LIBRARIES})
 
   ROSBUILD_ADD_EXECUTABLE(cuda_depth_to_lidar
@@ -97,7 +105,7 @@ IF(CUDA_FOUND)
     src/k4a_wrapper.cc)
   ADD_DEPENDENCIES(cuda_depth_to_lidar rosbuild_precompile)
   TARGET_LINK_LIBRARIES(cuda_depth_to_lidar roslib roscpp pthread boost_system
-      ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a gflags X11 cuda_lib
+      ${LUA_LIBRARIES} rt glog rosbag amrl_shared_lib k4a k4arecord gflags X11 cuda_lib
       ${BUILD_SPECIFIC_LIBRARIES})
 
   ADD_EXECUTABLE(cuda_tests

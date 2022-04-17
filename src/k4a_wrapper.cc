@@ -31,6 +31,7 @@
 #include "gflags/gflags.h"
 #include "glog/logging.h"
 #include "k4a/k4a.h"
+#include "k4arecord/playback.hpp"
 
 #include "math/geometry.h"
 #include "util/timer.h"
@@ -38,8 +39,31 @@
 #include "k4a_wrapper.h"
 
 using Eigen::Vector3f;
+using k4a::playback;
+
+int NUM_FRAMES = 301;
 
 namespace k4a_wrapper {
+
+K4AWrapper::K4AWrapper(
+    const k4a_device_configuration_t& config,
+    bool enable_image_registration,
+    k4a_playback_t playback_handle = nullptr) : 
+        device_(nullptr), 
+        register_images_(enable_image_registration),
+        playback_handle_(playback_handle),
+        playback_(true),
+        ctr_(0),
+        config_(config) {
+
+  k4a_result_t result = k4a_playback_get_calibration(playback_handle, &calibration_);
+
+  if (K4A_RESULT_SUCCEEDED != result)
+  {
+      printf("Failed to read calibration from recording!\n");
+  }
+  transformation_ = k4a_transformation_create(&calibration_);
+}
 
 K4AWrapper::K4AWrapper(
     const std::string& serial, 
@@ -47,12 +71,15 @@ K4AWrapper::K4AWrapper(
     bool enable_image_registration) : 
         device_(nullptr), 
         register_images_(enable_image_registration),
+        playback_handle_(nullptr),
+        playback_(false),
         config_(config) {
+
   OpenDevice(serial);
   k4a_device_get_calibration(
-      device_, config_.depth_mode, config_.color_resolution, &calibration_);
+    device_, config_.depth_mode, config_.color_resolution, &calibration_);
   transformation_ = k4a_transformation_create(&calibration_);
-  // Try to start the camera.
+  // Try to start the camera
   if (K4A_RESULT_SUCCEEDED != k4a_device_start_cameras(device_, &config_)) {
     k4a_device_close(device_);
     abort();
@@ -60,7 +87,8 @@ K4AWrapper::K4AWrapper(
 }
 
 K4AWrapper::~K4AWrapper() {
-  k4a_device_close(device_);
+  if (!playback_)
+    k4a_device_close(device_);
 }
 
 std::string K4AWrapper::GetKinectSerial() {
@@ -94,7 +122,89 @@ void K4AWrapper::OpenDevice(const std::string& serial) {
   exit(1);
 }
 
-void K4AWrapper::Capture() {
+bool K4AWrapper::CaptureFromPlayback() {
+  k4a_capture_t capture = NULL;
+  ctr_++;
+  if (ctr_ > NUM_FRAMES) {
+    return false;
+  }
+  switch (k4a_playback_get_next_capture(playback_handle_, &capture)) {
+    case K4A_STREAM_RESULT_SUCCEEDED: {
+      if (config_.depth_mode == K4A_DEPTH_MODE_OFF && 
+          config_.color_resolution != K4A_COLOR_RESOLUTION_OFF) {
+        // Only color.
+        k4a_image_t color_image = k4a_capture_get_color_image(capture);
+        ColorCallback(color_image);
+        k4a_image_release(color_image);
+      } else if (config_.depth_mode != K4A_DEPTH_MODE_OFF && 
+                 config_.color_resolution == K4A_COLOR_RESOLUTION_OFF) {
+        // Only depth.
+        k4a_image_t depth_image = k4a_capture_get_depth_image(capture);
+        DepthCallback(depth_image);
+        k4a_image_release(depth_image);
+      } else if (config_.depth_mode != K4A_DEPTH_MODE_OFF && 
+                 config_.color_resolution != K4A_COLOR_RESOLUTION_OFF) {
+        // Color and depth.
+        k4a_image_t depth_image = k4a_capture_get_depth_image(capture);
+        k4a_image_t color_image = k4a_capture_get_color_image(capture);
+        // printf("depth and color image!\n");
+        if (depth_image == nullptr || color_image == nullptr) {
+          // One of the frames was not received, drop this capture.
+          if (FLAGS_v > 0) {
+            fprintf(stderr, 
+                    "Received at least one invalid frame, "
+                    "depth:0x%08lX, "
+                    "color:0x%08lX\n",
+                    reinterpret_cast<uint64_t>(depth_image),
+                    reinterpret_cast<uint64_t>(color_image));
+          }
+        } else if (register_images_) {
+          k4a_image_t registered_depth;
+          CHECK_EQ(k4a_image_create(
+              K4A_IMAGE_FORMAT_DEPTH16,
+              calibration_.color_camera_calibration.resolution_width,
+              calibration_.color_camera_calibration.resolution_height,
+              0,
+              &registered_depth), K4A_RESULT_SUCCEEDED);
+          CHECK_EQ(k4a_transformation_depth_image_to_color_camera(
+              transformation_,
+              depth_image,
+              registered_depth), K4A_RESULT_SUCCEEDED);
+          RegisteredRGBDCallback(color_image, registered_depth);
+          k4a_image_release(registered_depth);
+        } else {
+          UnregisteredRGBDCallback(color_image, depth_image);
+        }
+        if (depth_image) k4a_image_release(depth_image);
+        if (color_image) k4a_image_release(color_image);
+      }
+      k4a_capture_release(capture);
+      return true;
+    } break;
+    case K4A_STREAM_RESULT_EOF: {
+      printf("playback reached end of file\n");
+    } break;
+    case K4A_STREAM_RESULT_FAILED: {
+        printf("Failed to read from recording\n");
+    } break;
+    default: {
+      fprintf(stderr, "ERROR: Unexpected response from recording\n");
+    }
+  }
+  return false;
+}
+
+bool K4AWrapper::Capture() {
+  if (playback_) {
+    return CaptureFromPlayback();
+  } else {
+    CaptureFromDevice();
+  }
+
+  return false;
+}
+
+void K4AWrapper::CaptureFromDevice() {
   k4a_capture_t capture = NULL;
   switch (k4a_device_get_capture(device_, &capture, K4A_WAIT_INFINITE)) {
     case K4A_WAIT_RESULT_SUCCEEDED: {
