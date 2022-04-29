@@ -199,6 +199,7 @@ bool K4AWrapper::Capture() {
 
 void K4AWrapper::CaptureFromDevice() {
   k4a_capture_t capture = NULL;
+
   switch (k4a_device_get_capture(device_, &capture, K4A_WAIT_INFINITE)) {
     case K4A_WAIT_RESULT_SUCCEEDED: {
       if (config_.depth_mode == K4A_DEPTH_MODE_OFF && 

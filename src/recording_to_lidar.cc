@@ -239,7 +239,7 @@ class RecordingToLidar : public K4AWrapper {
       *iter_x = points_[idx].x();
       *iter_y = points_[idx].y();
       *iter_z = points_[idx].z();
-      *iter_rgb = colors_[idx];;
+      *iter_rgb = colors_[idx];
       ++iter_x;
       ++iter_y;
       ++iter_z;
@@ -406,11 +406,9 @@ int main(int argc, char* argv[]) {
 
   bool success = true;
 
-  RateLoop loop(10.0);
   while (ros::ok() && success) {
     success = interface.Capture();
     ros::spinOnce();
-    loop.Sleep();
   }
 
   k4a_playback_close(playback_handle);
