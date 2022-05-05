@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
 
 
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+  config.color_resolution = K4A_COLOR_RESOLUTION_1536P;
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
   config.synchronized_images_only = true;
@@ -115,6 +115,3 @@ int main(int argc, char* argv[]) {
   PrintExtrinsics(kinect.calibration_.depth_camera_calibration.extrinsics);
   return 0;
 }
-
-
-

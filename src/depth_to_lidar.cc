@@ -367,6 +367,8 @@ class DepthToLidar : public K4AWrapper {
       PublishRGBImage(color_image, stamp_time);
     }
 
+    return;  // (eyang) don't compute depth info
+
     if (depth_image == nullptr) return;
     DepthToPointCloud(color_image, depth_image);
     PublishScan(stamp_time);
@@ -425,8 +427,9 @@ int main(int argc, char* argv[]) {
   ros::init(argc, argv, "k4a_ros");
   ros::NodeHandle n;
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+  config.color_resolution = K4A_COLOR_RESOLUTION_1536P;
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
+  config.camera_fps = K4A_FRAMES_PER_SECOND_15;
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
   config.synchronized_images_only = false;
   DepthToLidar interface(n, CONFIG_serial, config);
