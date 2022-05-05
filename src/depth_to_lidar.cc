@@ -342,7 +342,7 @@ class DepthToLidar : public K4AWrapper {
     uint64_t sec =
         boot_timestamp_.sec + imu_sample.acc_timestamp_usec / 1'000'000;
     uint64_t nsec = boot_timestamp_.nsec +
-                    imu_sample.acc_timestamp_usec % 1'000'000 * 1'000;
+                    (imu_sample.acc_timestamp_usec % 1'000'000) * 1'000;
 
     sec += nsec / 1'000'000'000;
     nsec %= 1'000'000'000;
