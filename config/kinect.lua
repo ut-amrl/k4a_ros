@@ -7,6 +7,7 @@ rgb_image_frame = "kinect_color";
 depth_image_frame = "kinect_depth";
 scan_frame = "base_link";
 scan_topic = "kinect_scan";
+imu_topic = "kinect_imu";
 registered_rgbd = true;
 
 rotation = {
@@ -27,4 +28,3 @@ ground_angle_thresh = 5.0; -- Degrees.
 camera_angle_thresh = 50.0;
 min_dist_thresh = 0.05;
 num_ranges = 180;
-

@@ -57,6 +57,10 @@ K4AWrapper::K4AWrapper(
     k4a_device_close(device_);
     abort();
   }
+  if (K4A_RESULT_SUCCEEDED != k4a_device_start_imu(device_)) {
+    k4a_device_close(device_);
+    abort();
+  }
 }
 
 K4AWrapper::~K4AWrapper() {
@@ -146,6 +150,13 @@ void K4AWrapper::Capture() {
         if (color_image) k4a_image_release(color_image);
       }
       k4a_capture_release(capture);
+
+      // Process IMU sample queue
+      k4a_imu_sample_t imu_sample;
+      while (k4a_device_get_imu_sample(device_, &imu_sample, 0) ==
+             K4A_WAIT_RESULT_SUCCEEDED) {
+        ImuCallback(imu_sample);
+      }
     } break;
     case K4A_WAIT_RESULT_TIMEOUT: {
       printf("Timed out waiting for a capture\n");
