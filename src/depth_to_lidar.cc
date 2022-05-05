@@ -343,9 +343,10 @@ class DepthToLidar : public K4AWrapper {
     imu_msg_.angular_velocity.x = imu_sample.gyro_sample.xyz.x;
     imu_msg_.angular_velocity.y = imu_sample.gyro_sample.xyz.y;
     imu_msg_.angular_velocity.z = imu_sample.gyro_sample.xyz.z;
-    imu_msg_.linear_acceleration.x = imu_sample.acc_sample.xyz.x;
-    imu_msg_.linear_acceleration.y = imu_sample.acc_sample.xyz.y;
-    imu_msg_.linear_acceleration.z = imu_sample.acc_sample.xyz.z;
+    // Convert values to g = +9.8 m/s^2 convention
+    imu_msg_.linear_acceleration.x = -imu_sample.acc_sample.xyz.x;
+    imu_msg_.linear_acceleration.y = -imu_sample.acc_sample.xyz.y;
+    imu_msg_.linear_acceleration.z = -imu_sample.acc_sample.xyz.z;
 
     imu_publisher_.publish(imu_msg_);
   }
