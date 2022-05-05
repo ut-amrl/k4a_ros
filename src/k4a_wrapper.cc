@@ -57,6 +57,10 @@ K4AWrapper::K4AWrapper(
     k4a_device_close(device_);
     abort();
   }
+  if (K4A_RESULT_SUCCEEDED != k4a_device_start_imu(device_)) {
+    k4a_device_close(device_);
+    abort();
+  }
 }
 
 K4AWrapper::~K4AWrapper() {
