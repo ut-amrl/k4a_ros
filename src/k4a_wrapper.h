@@ -41,6 +41,7 @@ class K4AWrapper {
       k4a_image_t image_rgb, k4a_image_t image_depth) {}
   virtual void RegisteredRGBDCallback(
       k4a_image_t image_rgb, k4a_image_t image_depth) {}
+  virtual void ImuCallback(k4a_imu_sample_t& imu_sample) {}
 
  private:
   void OpenDevice(const std::string& serial);
