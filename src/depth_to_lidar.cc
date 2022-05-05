@@ -102,6 +102,7 @@ class DepthToLidar : public K4AWrapper {
       const k4a_device_configuration_t& config)  :
       K4AWrapper(serial, config, CONFIG_registered),
       image_transport_(n) {
+    boot_timestamp_ = ros::Time::now();
     costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
     cloud_publisher_ = 
@@ -336,10 +337,17 @@ class DepthToLidar : public K4AWrapper {
       return;
     }
 
-    imu_msg_.header.stamp =
-        ros::Time(imu_sample.acc_timestamp_usec / 1'000'000,
-                  imu_sample.acc_timestamp_usec % 1'000'000 * 1'000);
+    // Use the message's timestamp-since-boot because we might be processing
+    // from a queue.
+    uint64_t sec =
+        boot_timestamp_.sec + imu_sample.acc_timestamp_usec / 1'000'000;
+    uint64_t nsec = boot_timestamp_.nsec +
+                    imu_sample.acc_timestamp_usec % 1'000'000 * 1'000;
 
+    sec += nsec / 1'000'000'000;
+    nsec %= 1'000'000'000;
+
+    imu_msg_.header.stamp = ros::Time(sec, nsec);
     imu_msg_.angular_velocity.x = imu_sample.gyro_sample.xyz.x;
     imu_msg_.angular_velocity.y = imu_sample.gyro_sample.xyz.y;
     imu_msg_.angular_velocity.z = imu_sample.gyro_sample.xyz.z;
@@ -403,6 +411,7 @@ class DepthToLidar : public K4AWrapper {
   image_transport::ImageTransport image_transport_;
   // Translation component of extrinsics.
   Eigen::Vector3f ext_translation_;
+  ros::Time boot_timestamp_;
 };
 
 int main(int argc, char* argv[]) {
