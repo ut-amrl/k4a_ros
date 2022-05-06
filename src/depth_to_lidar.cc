@@ -77,6 +77,7 @@ CONFIG_STRING(depth_frame, "depth_image_frame");
 CONFIG_STRING(scan_topic, "scan_topic");
 CONFIG_STRING(scan_frame, "scan_frame");
 CONFIG_STRING(imu_topic, "imu_topic");
+CONFIG_STRING(imu_frame, "imu_frame");
 CONFIG_BOOL(registered, "registered_rgbd");
 
 CONFIG_FLOAT(yaw, "rotation.yaw");
@@ -126,7 +127,7 @@ class DepthToLidar : public K4AWrapper {
     depth_msg_.header.frame_id = CONFIG_depth_frame;
     scan_msg_.header.frame_id = CONFIG_scan_frame;
     cloud_msg_.header.frame_id = CONFIG_scan_frame;
-    imu_msg_.header.frame_id = CONFIG_depth_frame;
+    imu_msg_.header.frame_id = CONFIG_imu_frame;
 
     heightmap_msg_.header = scan_msg_.header;
     // OpenCV Image format, float, 2 channel.
@@ -351,10 +352,9 @@ class DepthToLidar : public K4AWrapper {
     imu_msg_.angular_velocity.x = imu_sample.gyro_sample.xyz.x;
     imu_msg_.angular_velocity.y = imu_sample.gyro_sample.xyz.y;
     imu_msg_.angular_velocity.z = imu_sample.gyro_sample.xyz.z;
-    // Convert values to g = +9.8 m/s^2 convention
-    imu_msg_.linear_acceleration.x = -imu_sample.acc_sample.xyz.x;
-    imu_msg_.linear_acceleration.y = -imu_sample.acc_sample.xyz.y;
-    imu_msg_.linear_acceleration.z = -imu_sample.acc_sample.xyz.z;
+    imu_msg_.linear_acceleration.x = imu_sample.acc_sample.xyz.x;
+    imu_msg_.linear_acceleration.y = imu_sample.acc_sample.xyz.y;
+    imu_msg_.linear_acceleration.z = imu_sample.acc_sample.xyz.z;
 
     imu_publisher_.publish(imu_msg_);
   }

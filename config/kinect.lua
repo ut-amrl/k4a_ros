@@ -8,6 +8,7 @@ depth_image_frame = "kinect_depth";
 scan_frame = "base_link";
 scan_topic = "kinect_scan";
 imu_topic = "kinect_imu";
+imu_frame = "kinect_imu";
 registered_rgbd = true;
 
 rotation = {
