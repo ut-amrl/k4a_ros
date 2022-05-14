@@ -254,6 +254,7 @@ class DepthToLidar : public K4AWrapper {
       ++iter_z;
       ++iter_rgb;
     }
+    cloud_msg_.header.stamp = ros::Time::now();
     cloud_publisher_.publish(cloud_msg_);
   }
 
