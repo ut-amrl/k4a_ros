@@ -212,7 +212,7 @@ class DepthToLidar : public K4AWrapper {
                         num_pixels);
   }
 
-  void PublishPointCloud() {
+  void PublishPointCloud(const ros::Time &stamp) {
     sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg_, "x");
     sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg_, "y");
     sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg_, "z");
@@ -229,6 +229,7 @@ class DepthToLidar : public K4AWrapper {
       ++iter_z;
       ++iter_rgb;
     }
+    cloud_msg_.header.stamp = stamp;
     cloud_publisher_.publish(cloud_msg_);
   }
 
@@ -246,7 +247,7 @@ class DepthToLidar : public K4AWrapper {
     std::copy(rgb_data, rgb_data + points_.size(), colors_.begin());
   }
 
-  void PublishScan() {
+  void PublishScan(const ros::Time &stamp) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     const float tan_a = tan(DegToRad(CONFIG_ground_angle_thresh));
@@ -274,27 +275,27 @@ class DepthToLidar : public K4AWrapper {
     scan_msg_.angle_increment = angle_increment;
     scan_msg_.range_min = 0.0;
     scan_msg_.range_max = 10.0;
-    scan_msg_.header.stamp = ros::Time::now();
+    scan_msg_.header.stamp = stamp;
     scan_publisher_.publish(scan_msg_);
   }
 
-  void PublishRGBImage(k4a_image_t color_image) {
+  void PublishRGBImage(k4a_image_t color_image, const ros::Time &stamp) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     uint32_t* rgb_data = 
           reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
     memcpy(rgb_msg_.data.data(), rgb_data, rgb_msg_.data.size());
-    rgb_msg_.header.stamp = ros::Time::now();
+    rgb_msg_.header.stamp = stamp;
     rgb_publisher_.publish(rgb_msg_);
   }
 
-  void PublishDepthImage(k4a_image_t depth_image) {
+  void PublishDepthImage(k4a_image_t depth_image, const ros::Time &stamp) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     uint16_t* depth_data = 
         reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
     memcpy(depth_msg_.data.data(), depth_data, depth_msg_.data.size());
-    depth_msg_.header.stamp = ros::Time::now();
+    depth_msg_.header.stamp = stamp;
     depth_publisher_.publish(depth_msg_);
   }
 
@@ -303,21 +304,22 @@ class DepthToLidar : public K4AWrapper {
 
   void RegisteredRGBDCallback(k4a_image_t color_image, 
                               k4a_image_t depth_image) override {
+    ros::Time stamp_time = ros::Time::now();
     if (FLAGS_v > 1) {
       printf("Received a registered frame, t=%f\n", GetMonotonicTime());
     }
     if (color_image != nullptr && FLAGS_rgb) {
-      PublishRGBImage(color_image);
+      PublishRGBImage(color_image, stamp_time);
     }
 
     if (depth_image == nullptr) return;
     DepthToPointCloud(color_image, depth_image);
-    PublishScan();
+    PublishScan(stamp_time);
     if (FLAGS_depth) {
-      PublishDepthImage(depth_image);
+      PublishDepthImage(depth_image, stamp_time);
     }
     if (FLAGS_points) {
-      PublishPointCloud();
+      PublishPointCloud(stamp_time);
     }
   }
 
