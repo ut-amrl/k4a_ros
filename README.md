@@ -10,8 +10,8 @@ Azure Kinect ROS drivers
     ```
     sudo apt install liblua5.1-0-dev libgflags-dev libgoogle-glog-dev libgoogle-perftools-dev cimg-dev
     ```
-1. [ROS](https://wiki.ros.org/Installation/)
-1. [Microsoft Kinect For Azure SDK](https://docs.microsoft.com/en-us/azure/kinect-dk/sensor-sdk-download)  
+2. [ROS](https://wiki.ros.org/Installation/)
+3. [Microsoft Kinect For Azure SDK](https://docs.microsoft.com/en-us/azure/kinect-dk/sensor-sdk-download)  
     If installing on \*buntu 18.04, you can follow the instructions as is.  
     If installing on \*buntu 20.04, you will need to manually add the repo for 18.04 instead as follows in `/etc/apt/sources.list`:
     ```
@@ -25,7 +25,8 @@ Azure Kinect ROS drivers
     ```
     sudo apt install libk4a1.4-dev k4a-tools
     ```
-1. Add the file [99-k4a.rules](99-k4a.rules) to `/etc/udev/rules.d` to allow access to the kinect device, and reboot to apply the changes.
+4. Add the file [99-k4a.rules](99-k4a.rules) to `/etc/udev/rules.d` to allow access to the kinect device, and reboot to apply the changes.
+5. Be sure to pull in changes for the git submodules before making. If it's your first time pulling changes in this repo run `git submodule update --init --recursive` first. After doing this, run `git submodule update --recursive --remote`.
 
 ## Compile
 
