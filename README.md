@@ -27,12 +27,14 @@ Azure Kinect ROS drivers
     ```
 4. Add the file [99-k4a.rules](99-k4a.rules) to `/etc/udev/rules.d` to allow access to the kinect device, and reboot to apply the changes.
 5. Be sure to pull in changes for the git submodules before making. If it's your first time pulling changes in this repo run `git submodule update --init --recursive` first. After doing this, run `git submodule update --recursive --remote`.
+6. (Optional) To use microphone array, install the [audio_common](https://wiki.ros.org/audio_common/Tutorials/Streaming%20audio) ros package according to the tutorial. At this point, you can go to audio system settings and verify the Azure Kinect microphone is connected.
 
 ## Compile
 
 Run `make [-j]`
 
 ## Usage
+The streamed topics will be available on the Fixed Frame `kinect` on rviz by default.
 
 To stream just converted laserscan data :
 ```
@@ -53,6 +55,9 @@ To save registered color and RGB images to disk (e.g. to the directory `out`):
 ```
 ./bin/save_rgbd_images --save_dir out
 ```
+
+## libusb errors
+If you encounter an issue with the libusb driver, it may be due to the data bus limit on the usb port not being set to a high enough value. If this is the case, open the grub file (/etc/default/grub) and replace the line `GRUB_CMDLINE_LINUX_DEFAULT=quiet splash` with `GRUB_CMDLINE_LINUX_DEFAULT=quiet splash usbcore.usbfs_memory_mb=2000`. Then, run `sudo update-grub` and reboot the system after updating grub.
 
 ## XServer errors
 
