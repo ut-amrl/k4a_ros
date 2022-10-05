@@ -367,16 +367,14 @@ class DepthToLidar : public K4AWrapper {
       PublishRGBImage(color_image, stamp_time);
     }
 
-    return;  // (eyang) don't compute depth info
-
     if (depth_image == nullptr) return;
-    DepthToPointCloud(color_image, depth_image);
     PublishScan(stamp_time);
     if (FLAGS_depth) {
       // TODO consider publishing camera info also with same timestamp
       PublishDepthImage(depth_image, stamp_time);
     }
     if (FLAGS_points) {
+      DepthToPointCloud(color_image, depth_image);
       PublishPointCloud(stamp_time);
     }
   }
