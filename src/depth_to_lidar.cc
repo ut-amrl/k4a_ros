@@ -381,7 +381,15 @@ class DepthToLidar : public K4AWrapper {
     }
   }
 
-  void RegisteredRGBDCallback(k4a_image_t color_image, 
+  void ColorCallback(k4a_image_t image) override {
+    ros::Time stamp_time = ros::Time::now();
+    if (image != nullptr && FLAGS_rgb) {
+      // TODO consider publishing camera info also with same timestamp
+      PublishRGBImage(image, stamp_time);
+    }
+  }
+
+  void RegisteredRGBDCallback(k4a_image_t color_image,
                               k4a_image_t depth_image) override {
     if (FLAGS_v > 1) {
       printf("Received a registered frame, t=%f\n", GetMonotonicTime());
@@ -470,7 +478,11 @@ int main(int argc, char* argv[]) {
   }
 
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  if (FLAGS_depth) {
+    config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  } else {
+    config.depth_mode = K4A_DEPTH_MODE_OFF;
+  }
   config.synchronized_images_only = false;
   DepthToLidar interface(n, CONFIG_serial, config);
 
