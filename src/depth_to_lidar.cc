@@ -423,6 +423,8 @@ class DepthToLidar : public K4AWrapper {
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
+  FLAGS_logtostderr = true;
+  FLAGS_colorlogtostderr = true;
   config_reader::ConfigReader reader({FLAGS_config_file});
   ros::init(argc, argv, "k4a_ros");
   ros::NodeHandle n;
