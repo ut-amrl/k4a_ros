@@ -113,7 +113,7 @@ class DepthToLidar : public K4AWrapper {
     scan_publisher_ = 
         n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
     imu_publisher_ =
-        n.advertise<sensor_msgs::Imu>(CONFIG_imu_topic, 1, false);
+        n.advertise<sensor_msgs::Imu>(CONFIG_imu_topic, 400, false);
     rgb_publisher_ = image_transport_.advertise(CONFIG_rgb_topic, 1);
     depth_publisher_ = image_transport_.advertise(CONFIG_depth_topic, 1);
     InitMessages();
