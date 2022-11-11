@@ -67,6 +67,7 @@ DEFINE_bool(rgb, false, "Publish color images");
 DEFINE_bool(imu, false, "Publish IMU data");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
 DEFINE_uint32(resolution, 720, "RGB Image Resolution");
+DEFINE_uint32(fps, 15, "RGB image frame rate");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
@@ -451,8 +452,22 @@ int main(int argc, char* argv[]) {
       config.color_resolution = K4A_COLOR_RESOLUTION_720P;
   }
 
+  switch (FLAGS_fps) {
+    case 5:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_5;
+      break;
+    case 15:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_15;
+      break;
+    case 30:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_30;
+      break;
+    default:
+      LOG(WARNING) << "Unknown fps \"" << FLAGS_fps << "\", defaulting to 15";
+      config.camera_fps = K4A_FRAMES_PER_SECOND_15;
+  }
+
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  config.camera_fps = K4A_FRAMES_PER_SECOND_15;
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
   config.synchronized_images_only = false;
   DepthToLidar interface(n, CONFIG_serial, config);
