@@ -66,7 +66,7 @@ DEFINE_bool(points, false, "Publish point cloud");
 DEFINE_bool(rgb, false, "Publish color images");
 DEFINE_bool(imu, false, "Publish IMU data");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
-DEFINE_uint32(resolution, 1536, "RGB Image Resolution");
+DEFINE_uint32(resolution, 720, "RGB Image Resolution");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
@@ -427,16 +427,28 @@ int main(int argc, char* argv[]) {
   ros::NodeHandle n;
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
 
-  if (FLAGS_resolution == 720) {
-    config.color_resolution = K4A_COLOR_RESOLUTION_720P;
-  } else if (FLAGS_resolution == 1080) {
-    config.color_resolution = K4A_COLOR_RESOLUTION_1080P;
-  } else if (FLAGS_resolution == 1536) {
-    config.color_resolution = K4A_COLOR_RESOLUTION_1536P;
-  } else {
-    LOG(WARNING) << "Unhanded resolution \"" << config.color_resolution
-                 << "\", defaulting to 720p";
-    config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+  switch (FLAGS_resolution) {
+    case 720:
+      config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+      break;
+    case 1080:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1080P;
+      break;
+    case 1440:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1440P;
+      break;
+    case 1536:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1536P;
+      break;
+    case 2160:
+      config.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+      break;
+    case 3072:
+      config.color_resolution = K4A_COLOR_RESOLUTION_3072P;
+      break;
+    default:
+      LOG(WARNING) << "Unknown resolution \"" << FLAGS_resolution << "\", defaulting to 720p";
+      config.color_resolution = K4A_COLOR_RESOLUTION_720P;
   }
 
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
