@@ -10,7 +10,7 @@ Azure Kinect ROS drivers
     ```
     sudo apt install liblua5.1-0-dev libgflags-dev libgoogle-glog-dev libgoogle-perftools-dev cimg-dev
     ```
-2. [ROS](https://wiki.ros.org/Installation/)
+2. [ROS](https://wiki.ros.org/Installation/), [AMRL ROS Messages](https://github.com/ut-amrl/amrl_msgs)
 3. [Microsoft Kinect For Azure SDK](https://docs.microsoft.com/en-us/azure/kinect-dk/sensor-sdk-download)  
     If installing on \*buntu 18.04, you can follow the instructions as is.  
     If installing on \*buntu 20.04, you will need to manually add the repo for 18.04 instead as follows in `/etc/apt/sources.list`:
@@ -30,8 +30,12 @@ Azure Kinect ROS drivers
 6. (Optional) To use microphone array, install the [audio_common](https://wiki.ros.org/audio_common/Tutorials/Streaming%20audio) ros package according to the tutorial. At this point, you can go to audio system settings and verify the Azure Kinect microphone is connected.
 
 ## Compile
+1. Add it to your `ROS_PACKAGE_PATH` environment variable:
+    ```
+    export ROS_PACKAGE_PATH=`pwd`:$ROS_PACKAGE_PATH
+    ```
 
-Run `make [-j]`
+2. Run `make [-j]`
 
 ## Usage
 The streamed topics will be available on the Fixed Frame `kinect` on rviz by default.
