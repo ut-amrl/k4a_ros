@@ -66,6 +66,8 @@ DEFINE_bool(points, false, "Publish point cloud");
 DEFINE_bool(rgb, false, "Publish color images");
 DEFINE_bool(imu, false, "Publish IMU data");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
+DEFINE_uint32(resolution, 720, "RGB Image Resolution");
+DEFINE_uint32(fps, 15, "RGB image frame rate");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
@@ -368,18 +370,26 @@ class DepthToLidar : public K4AWrapper {
     }
 
     if (depth_image == nullptr) return;
-    DepthToPointCloud(color_image, depth_image);
     PublishScan(stamp_time);
     if (FLAGS_depth) {
       // TODO consider publishing camera info also with same timestamp
       PublishDepthImage(depth_image, stamp_time);
     }
     if (FLAGS_points) {
+      DepthToPointCloud(color_image, depth_image);
       PublishPointCloud(stamp_time);
     }
   }
 
-  void RegisteredRGBDCallback(k4a_image_t color_image, 
+  void ColorCallback(k4a_image_t image) override {
+    ros::Time stamp_time = ros::Time::now();
+    if (image != nullptr && FLAGS_rgb) {
+      // TODO consider publishing camera info also with same timestamp
+      PublishRGBImage(image, stamp_time);
+    }
+  }
+
+  void RegisteredRGBDCallback(k4a_image_t color_image,
                               k4a_image_t depth_image) override {
     if (FLAGS_v > 1) {
       printf("Received a registered frame, t=%f\n", GetMonotonicTime());
@@ -421,13 +431,58 @@ class DepthToLidar : public K4AWrapper {
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
+  FLAGS_logtostderr = true;
+  FLAGS_colorlogtostderr = true;
   config_reader::ConfigReader reader({FLAGS_config_file});
   ros::init(argc, argv, "k4a_ros");
   ros::NodeHandle n;
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+
+  switch (FLAGS_resolution) {
+    case 720:
+      config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+      break;
+    case 1080:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1080P;
+      break;
+    case 1440:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1440P;
+      break;
+    case 1536:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1536P;
+      break;
+    case 2160:
+      config.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+      break;
+    case 3072:
+      config.color_resolution = K4A_COLOR_RESOLUTION_3072P;
+      break;
+    default:
+      LOG(WARNING) << "Unknown resolution \"" << FLAGS_resolution << "\", defaulting to 720p";
+      config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+  }
+
+  switch (FLAGS_fps) {
+    case 5:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_5;
+      break;
+    case 15:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_15;
+      break;
+    case 30:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_30;
+      break;
+    default:
+      LOG(WARNING) << "Unknown fps \"" << FLAGS_fps << "\", defaulting to 15";
+      config.camera_fps = K4A_FRAMES_PER_SECOND_15;
+  }
+
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  if (FLAGS_depth) {
+    config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  } else {
+    config.depth_mode = K4A_DEPTH_MODE_OFF;
+  }
   config.synchronized_images_only = false;
   DepthToLidar interface(n, CONFIG_serial, config);
 
