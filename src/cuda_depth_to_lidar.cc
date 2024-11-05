@@ -35,6 +35,7 @@
 #include "ros/ros.h"
 #include "sensor_msgs/Image.h"
 #include "sensor_msgs/image_encodings.h"
+#include "sensor_msgs/Imu.h"
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
@@ -66,7 +67,10 @@ DECLARE_int32(v);
 DEFINE_bool(depth, false, "Publish depth images");
 DEFINE_bool(points, false, "Publish point cloud");
 DEFINE_bool(rgb, false, "Publish color images");
+DEFINE_bool(imu, false, "Publish IMU data");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
+DEFINE_uint32(resolution, 720, "RGB Image Resolution");
+DEFINE_uint32(fps, 15, "RGB image frame rate");
 
 CONFIG_STRING(serial, "kinect_serial");
 CONFIG_STRING(costmap_topic, "costmap_topic");
@@ -77,6 +81,8 @@ CONFIG_STRING(rgb_frame, "rgb_image_frame");
 CONFIG_STRING(depth_frame, "depth_image_frame");
 CONFIG_STRING(scan_topic, "scan_topic");
 CONFIG_STRING(scan_frame, "scan_frame");
+CONFIG_STRING(imu_topic, "imu_topic");
+CONFIG_STRING(imu_frame, "imu_frame");
 CONFIG_BOOL(registered, "registered_rgbd");
 
 CONFIG_FLOAT(yaw, "rotation.yaw");
@@ -102,12 +108,15 @@ class DepthToLidar : public K4AWrapper {
       const k4a_device_configuration_t& config)  :
       K4AWrapper(serial, config, true),
       image_transport_(n) {
+    boot_timestamp_ = ros::Time::now();
     costmap_publisher_ = 
         n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
     cloud_publisher_ = 
         n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
     scan_publisher_ = 
         n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
+    imu_publisher_ =
+        n.advertise<sensor_msgs::Imu>(CONFIG_imu_topic, 1, false);
     rgb_publisher_ = image_transport_.advertise(CONFIG_rgb_topic, 1);
     depth_publisher_ = image_transport_.advertise(CONFIG_depth_topic, 1);
     InitMessages();
@@ -117,11 +126,14 @@ class DepthToLidar : public K4AWrapper {
   void InitMessages() {
     depth_msg_.header.seq = heightmap_msg_.header.seq = rgb_msg_.header.seq = 
         cloud_msg_.header.seq = scan_msg_.header.seq = 0;
+      
+    imu_msg_.header.seq = 0;
     
     rgb_msg_.header.frame_id = CONFIG_rgb_frame;
     depth_msg_.header.frame_id = CONFIG_depth_frame;
     scan_msg_.header.frame_id = CONFIG_scan_frame;
     cloud_msg_.header.frame_id = CONFIG_scan_frame;
+    imu_msg_.header.frame_id = CONFIG_imu_frame;
 
     heightmap_msg_.header = scan_msg_.header;
     // OpenCV Image format, float, 2 channel.
@@ -169,6 +181,7 @@ class DepthToLidar : public K4AWrapper {
     cloud_msg_.data.resize(width * height * cloud_msg_.point_step);
     cloud_msg_.width = width;
     cloud_msg_.height = height;
+    imu_msg_.orientation_covariance.fill(-1);  // Signify that the orientation field should be ignored.
   }
 
   void InitLookups() {
@@ -302,6 +315,40 @@ class DepthToLidar : public K4AWrapper {
   void PublishHeightMap() {
   }
 
+  void ImuCallback(k4a_imu_sample_t& imu_sample) override {
+    if (!FLAGS_imu) {
+      return;
+    }
+
+    // Use the message's timestamp-since-boot because we might be processing
+    // from a queue.
+    uint64_t sec =
+        boot_timestamp_.sec + imu_sample.acc_timestamp_usec / 1'000'000;
+    uint64_t nsec = boot_timestamp_.nsec +
+                    (imu_sample.acc_timestamp_usec % 1'000'000) * 1'000;
+
+    sec += nsec / 1'000'000'000;
+    nsec %= 1'000'000'000;
+
+    imu_msg_.header.stamp = ros::Time(sec, nsec);
+    imu_msg_.angular_velocity.x = imu_sample.gyro_sample.xyz.x;
+    imu_msg_.angular_velocity.y = imu_sample.gyro_sample.xyz.y;
+    imu_msg_.angular_velocity.z = imu_sample.gyro_sample.xyz.z;
+    imu_msg_.linear_acceleration.x = imu_sample.acc_sample.xyz.x;
+    imu_msg_.linear_acceleration.y = imu_sample.acc_sample.xyz.y;
+    imu_msg_.linear_acceleration.z = imu_sample.acc_sample.xyz.z;
+
+    imu_publisher_.publish(imu_msg_);
+  }
+
+  void ColorCallback(k4a_image_t image) override {
+    ros::Time stamp_time = ros::Time::now();
+    if (image != nullptr && FLAGS_rgb) {
+      // TODO consider publishing camera info also with same timestamp
+      PublishRGBImage(image, stamp_time);
+    }
+  }
+
   void RegisteredRGBDCallback(k4a_image_t color_image, 
                               k4a_image_t depth_image) override {
     ros::Time stamp_time = ros::Time::now();
@@ -313,12 +360,12 @@ class DepthToLidar : public K4AWrapper {
     }
 
     if (depth_image == nullptr) return;
-    DepthToPointCloud(color_image, depth_image);
     PublishScan(stamp_time);
     if (FLAGS_depth) {
       PublishDepthImage(depth_image, stamp_time);
     }
     if (FLAGS_points) {
+      DepthToPointCloud(color_image, depth_image);
       PublishPointCloud(stamp_time);
     }
   }
@@ -331,21 +378,26 @@ class DepthToLidar : public K4AWrapper {
   sensor_msgs::Image rgb_msg_;
   sensor_msgs::Image depth_msg_;
   sensor_msgs::Image heightmap_msg_;
+  sensor_msgs::Imu imu_msg_;
   sensor_msgs::PointCloud2 cloud_msg_;
   ros::Publisher costmap_publisher_;
   ros::Publisher cloud_publisher_;
   ros::Publisher scan_publisher_;
+  ros::Publisher imu_publisher_;
   image_transport::Publisher rgb_publisher_;
   image_transport::Publisher depth_publisher_;
   image_transport::Publisher heightmap_publisher_;
   image_transport::ImageTransport image_transport_;
   // Translation component of extrinsics.
   Eigen::Vector3f ext_translation_;
+  ros::Time boot_timestamp_;
 };
 
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, false);
+  FLAGS_logtostderr = true;
+  FLAGS_colorlogtostderr = true;
 
   if (FLAGS_v > 0) {
     processing_kernels::GetCudaCapabilities();
@@ -355,9 +407,54 @@ int main(int argc, char* argv[]) {
   ros::init(argc, argv, "k4a_ros");
   ros::NodeHandle n;
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+  
+  switch (FLAGS_resolution) {
+    case 720:
+      config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+      break;
+    case 1080:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1080P;
+      break;
+    case 1440:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1440P;
+      break;
+    case 1536:
+      config.color_resolution = K4A_COLOR_RESOLUTION_1536P;
+      break;
+    case 2160:
+      config.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+      break;
+    case 3072:
+      config.color_resolution = K4A_COLOR_RESOLUTION_3072P;
+      break;
+    default:
+      LOG(WARNING) << "Unknown resolution \"" << FLAGS_resolution << "\", defaulting to 720p";
+      config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+  }
+
+  switch (FLAGS_fps) {
+    case 5:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_5;
+      break;
+    case 15:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_15;
+      break;
+    case 30:
+      config.camera_fps = K4A_FRAMES_PER_SECOND_30;
+      break;
+    default:
+      LOG(WARNING) << "Unknown fps \"" << FLAGS_fps << "\", defaulting to 15";
+      config.camera_fps = K4A_FRAMES_PER_SECOND_15;
+  }
+
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  
+  if (FLAGS_depth) {
+    config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  } else {
+    config.depth_mode = K4A_DEPTH_MODE_OFF;
+  }
+
   config.synchronized_images_only = false;
   DepthToLidar interface(n, CONFIG_serial, config);
 
