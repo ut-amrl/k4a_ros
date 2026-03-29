@@ -23,22 +23,28 @@
 #include <k4a/k4a.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <string>
 #include <vector>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 #include "gflags/gflags.h"
 #include "glog/logging.h"
-#include "image_transport/image_transport.h"
+#include "opencv2/core.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/imgproc.hpp"
 #include "omp.h"
-#include "ros/ros.h"
-#include "sensor_msgs/Image.h"
-#include "sensor_msgs/image_encodings.h"
-#include "sensor_msgs/Imu.h"
-#include "sensor_msgs/LaserScan.h"
-#include "sensor_msgs/PointCloud2.h"
-#include "sensor_msgs/point_cloud2_iterator.h"
+#include "rclcpp/rclcpp.hpp"
+#include "builtin_interfaces/msg/time.hpp"
+#include "sensor_msgs/image_encodings.hpp"
+#include "sensor_msgs/msg/compressed_image.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+#include "sensor_msgs/point_cloud2_iterator.hpp"
 
 #include "config_reader/config_reader.h"
 #include "math/geometry.h"
@@ -60,11 +66,21 @@ using std::vector;
 
 using namespace math_util;
 
+namespace {
+builtin_interfaces::msg::Time ToBuiltinTime(const rclcpp::Time& t) {
+  builtin_interfaces::msg::Time out;
+  const int64_t ns = t.nanoseconds();
+  out.sec = static_cast<int32_t>(ns / 1000000000LL);
+  out.nanosec = static_cast<uint32_t>(ns % 1000000000LL);
+  return out;
+}
+}  // namespace
+
 DECLARE_int32(v);
 DEFINE_bool(depth, false, "Publish depth images");
 DEFINE_bool(points, false, "Publish point cloud");
-DEFINE_bool(rgb, false, "Publish color images");
-DEFINE_bool(imu, false, "Publish IMU data");
+DEFINE_bool(rgb, true, "Publish color images");
+DEFINE_bool(imu, true, "Publish IMU data");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
 DEFINE_uint32(resolution, 720, "RGB Image Resolution");
 DEFINE_uint32(fps, 15, "RGB image frame rate");
@@ -100,31 +116,29 @@ class DepthToLidar : public K4AWrapper {
  public:
 
   DepthToLidar(
-      ros::NodeHandle& n, 
+      const rclcpp::Node::SharedPtr& n,
       const std::string& serial,
       const k4a_device_configuration_t& config)  :
       K4AWrapper(serial, config, CONFIG_registered),
-      image_transport_(n) {
-    boot_timestamp_ = ros::Time::now();
+      node_(n) {
+    boot_timestamp_ = node_->get_clock()->now();
     costmap_publisher_ = 
-        n.advertise<sensor_msgs::Image>(CONFIG_costmap_topic, 1, false);
+        node_->create_publisher<sensor_msgs::msg::Image>(CONFIG_costmap_topic, 1);
     cloud_publisher_ = 
-        n.advertise<sensor_msgs::PointCloud2>(CONFIG_points_topic, 1, false);
+        node_->create_publisher<sensor_msgs::msg::PointCloud2>(CONFIG_points_topic, 1);
     scan_publisher_ = 
-        n.advertise<sensor_msgs::LaserScan>(CONFIG_scan_topic, 1, false);
+        node_->create_publisher<sensor_msgs::msg::LaserScan>(CONFIG_scan_topic, 1);
     imu_publisher_ =
-        n.advertise<sensor_msgs::Imu>(CONFIG_imu_topic, 1, false);
-    rgb_publisher_ = image_transport_.advertise(CONFIG_rgb_topic, 1);
-    depth_publisher_ = image_transport_.advertise(CONFIG_depth_topic, 1);
+        node_->create_publisher<sensor_msgs::msg::Imu>(CONFIG_imu_topic, 1);
+    rgb_publisher_ = node_->create_publisher<sensor_msgs::msg::CompressedImage>(
+        CONFIG_rgb_topic, 1);
+    depth_publisher_ = node_->create_publisher<sensor_msgs::msg::Image>(
+        CONFIG_depth_topic, 1);
     InitMessages();
     InitLookups();
   }
 
   void InitMessages() {
-    depth_msg_.header.seq = heightmap_msg_.header.seq = rgb_msg_.header.seq = 
-        cloud_msg_.header.seq = scan_msg_.header.seq = 0;
-    imu_msg_.header.seq = 0;
-    
     rgb_msg_.header.frame_id = CONFIG_rgb_frame;
     depth_msg_.header.frame_id = CONFIG_depth_frame;
     scan_msg_.header.frame_id = CONFIG_scan_frame;
@@ -136,14 +150,9 @@ class DepthToLidar : public K4AWrapper {
     heightmap_msg_.encoding = sensor_msgs::image_encodings::TYPE_32FC2;
     heightmap_msg_.is_bigendian = false;
 
-    rgb_msg_.encoding = sensor_msgs::image_encodings::BGRA8;
-    rgb_msg_.is_bigendian = false;
-    rgb_msg_.width = 
-        calibration_.color_camera_calibration.resolution_width;
-    rgb_msg_.height = 
-        calibration_.color_camera_calibration.resolution_height;
-    rgb_msg_.step = rgb_msg_.width * sizeof(uint32_t);
-    rgb_msg_.data.resize(rgb_msg_.step * rgb_msg_.height);
+    rgb_msg_.format = "jpeg";
+    rgb_width_ = calibration_.color_camera_calibration.resolution_width;
+    rgb_height_ = calibration_.color_camera_calibration.resolution_height;
 
     depth_msg_.encoding = sensor_msgs::image_encodings::MONO16;
     depth_msg_.is_bigendian = false;
@@ -164,19 +173,19 @@ class DepthToLidar : public K4AWrapper {
     cloud_msg_.is_bigendian = false;
     cloud_msg_.fields[0].name = "x";
     cloud_msg_.fields[0].offset = 0;
-    cloud_msg_.fields[0].datatype = sensor_msgs::PointField::FLOAT32;
+    cloud_msg_.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
     cloud_msg_.fields[0].count = 1;
     cloud_msg_.fields[1].name = "y";
     cloud_msg_.fields[1].offset = 4;
-    cloud_msg_.fields[1].datatype = sensor_msgs::PointField::FLOAT32;
+    cloud_msg_.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
     cloud_msg_.fields[1].count = 1;
     cloud_msg_.fields[2].name = "z";
     cloud_msg_.fields[2].offset = 8;
-    cloud_msg_.fields[2].datatype = sensor_msgs::PointField::FLOAT32;
+    cloud_msg_.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
     cloud_msg_.fields[2].count = 1;
     cloud_msg_.fields[3].name = "rgb";
     cloud_msg_.fields[3].offset = 12;
-    cloud_msg_.fields[3].datatype = sensor_msgs::PointField::UINT32;
+    cloud_msg_.fields[3].datatype = sensor_msgs::msg::PointField::UINT32;
     cloud_msg_.fields[3].count = 1;
     cloud_msg_.data.resize(width * height * cloud_msg_.point_step);
     cloud_msg_.width = width;
@@ -239,7 +248,7 @@ class DepthToLidar : public K4AWrapper {
     }
   }
 
-  void PublishPointCloud(ros::Time stamp) {
+  void PublishPointCloud(const rclcpp::Time& stamp) {
     sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg_, "x");
     sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg_, "y");
     sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg_, "z");
@@ -256,32 +265,34 @@ class DepthToLidar : public K4AWrapper {
       ++iter_z;
       ++iter_rgb;
     }
-    cloud_msg_.header.stamp = stamp;
-    cloud_publisher_.publish(cloud_msg_);
+    cloud_msg_.header.stamp = ToBuiltinTime(stamp);
+    cloud_publisher_->publish(cloud_msg_);
   }
 
   void DepthToPointCloud(k4a_image_t color_image, k4a_image_t depth_image) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     uint32_t* rgb_data = nullptr;
-    if (CONFIG_registered && color_image != nullptr) {
+    if (FLAGS_points && CONFIG_registered && color_image != nullptr) {
         rgb_data = 
             reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
     }
     uint16_t* depth_data = 
         reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
-    for (size_t i = 0; i < points_.size(); ++i) {
+    // Scan generation only uses every (1 + skip_points) point.
+    const size_t incr = FLAGS_points ? 1 : static_cast<size_t>(1 + CONFIG_skip_points);
+    for (size_t i = 0; i < points_.size(); i += incr) {
       points_[i] = ext_translation_ + 
           (static_cast<float>(depth_data[i]) * rgbd_ray_lookup_[i]);
       if (rgb_data) {
         colors_[i] = rgb_data[i];
-      } else {
+      } else if (FLAGS_points) {
         colors_[i] = 0xC0C0C0LU;
       }
     }
   }
 
-  void PublishScan(const ros::Time &stamp) {
+  void PublishScan(const rclcpp::Time& stamp) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     const float tan_a = tan(DegToRad(CONFIG_ground_angle_thresh));
@@ -309,28 +320,33 @@ class DepthToLidar : public K4AWrapper {
     scan_msg_.angle_increment = angle_increment;
     scan_msg_.range_min = 0.0;
     scan_msg_.range_max = 10.0;
-    scan_msg_.header.stamp = stamp;
-    scan_publisher_.publish(scan_msg_);
+    scan_msg_.header.stamp = ToBuiltinTime(stamp);
+    scan_publisher_->publish(scan_msg_);
   }
 
-  void PublishRGBImage(k4a_image_t color_image, const ros::Time &stamp) {
+  void PublishRGBImage(k4a_image_t color_image, const rclcpp::Time& stamp) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     uint32_t* rgb_data = 
           reinterpret_cast<uint32_t*>(k4a_image_get_buffer(color_image));
-    memcpy(rgb_msg_.data.data(), rgb_data, rgb_msg_.data.size());
-    rgb_msg_.header.stamp = stamp;
-    rgb_publisher_.publish(rgb_msg_);
+    const cv::Mat bgra(rgb_height_, rgb_width_, CV_8UC4, rgb_data);
+    cv::Mat bgr;
+    cv::cvtColor(bgra, bgr, cv::COLOR_BGRA2BGR);
+    cv::imencode(
+        ".jpg", bgr, rgb_msg_.data,
+        {cv::IMWRITE_JPEG_QUALITY, 90});
+    rgb_msg_.header.stamp = ToBuiltinTime(stamp);
+    rgb_publisher_->publish(rgb_msg_);
   }
 
-  void PublishDepthImage(k4a_image_t depth_image, const ros::Time &stamp) {
+  void PublishDepthImage(k4a_image_t depth_image, const rclcpp::Time& stamp) {
     static CumulativeFunctionTimer ft(__FUNCTION__);
     CumulativeFunctionTimer::Invocation invoke(&ft);
     uint16_t* depth_data =
         reinterpret_cast<uint16_t*>(k4a_image_get_buffer(depth_image));
     memcpy(depth_msg_.data.data(), depth_data, depth_msg_.data.size());
-    depth_msg_.header.stamp = stamp;
-    depth_publisher_.publish(depth_msg_);
+    depth_msg_.header.stamp = ToBuiltinTime(stamp);
+    depth_publisher_->publish(depth_msg_);
   }
 
   void PublishHeightMap() {
@@ -344,14 +360,16 @@ class DepthToLidar : public K4AWrapper {
     // Use the message's timestamp-since-boot because we might be processing
     // from a queue.
     uint64_t sec =
-        boot_timestamp_.sec + imu_sample.acc_timestamp_usec / 1'000'000;
-    uint64_t nsec = boot_timestamp_.nsec +
+        static_cast<uint64_t>(boot_timestamp_.seconds()) +
+        imu_sample.acc_timestamp_usec / 1'000'000;
+    uint64_t nsec = static_cast<uint64_t>(boot_timestamp_.nanoseconds() % 1000000000LL) +
                     (imu_sample.acc_timestamp_usec % 1'000'000) * 1'000;
 
     sec += nsec / 1'000'000'000;
     nsec %= 1'000'000'000;
 
-    imu_msg_.header.stamp = ros::Time(sec, nsec);
+    imu_msg_.header.stamp.sec = static_cast<int32_t>(sec);
+    imu_msg_.header.stamp.nanosec = static_cast<uint32_t>(nsec);
     imu_msg_.angular_velocity.x = imu_sample.gyro_sample.xyz.x;
     imu_msg_.angular_velocity.y = imu_sample.gyro_sample.xyz.y;
     imu_msg_.angular_velocity.z = imu_sample.gyro_sample.xyz.z;
@@ -359,30 +377,35 @@ class DepthToLidar : public K4AWrapper {
     imu_msg_.linear_acceleration.y = imu_sample.acc_sample.xyz.y;
     imu_msg_.linear_acceleration.z = imu_sample.acc_sample.xyz.z;
 
-    imu_publisher_.publish(imu_msg_);
+    imu_publisher_->publish(imu_msg_);
   }
 
   void RGBDCallback(k4a_image_t color_image, k4a_image_t depth_image) {
-    ros::Time stamp_time = ros::Time::now();
+    rclcpp::Time stamp_time = node_->get_clock()->now();
     if (color_image != nullptr && FLAGS_rgb) {
       // TODO consider publishing camera info also with same timestamp
       PublishRGBImage(color_image, stamp_time);
+    } else {
+      if (color_image == nullptr) {
+        RCLCPP_WARN(node_->get_logger(), "Color image is null");
+      }
     }
 
     if (depth_image == nullptr) return;
+    // Scan generation depends on projected 3D points, even if cloud publishing is disabled.
+    DepthToPointCloud(color_image, depth_image);
     PublishScan(stamp_time);
     if (FLAGS_depth) {
       // TODO consider publishing camera info also with same timestamp
       PublishDepthImage(depth_image, stamp_time);
     }
     if (FLAGS_points) {
-      DepthToPointCloud(color_image, depth_image);
       PublishPointCloud(stamp_time);
     }
   }
 
   void ColorCallback(k4a_image_t image) override {
-    ros::Time stamp_time = ros::Time::now();
+    rclcpp::Time stamp_time = node_->get_clock()->now();
     if (image != nullptr && FLAGS_rgb) {
       // TODO consider publishing camera info also with same timestamp
       PublishRGBImage(image, stamp_time);
@@ -409,23 +432,24 @@ class DepthToLidar : public K4AWrapper {
   std::vector<Eigen::Vector3f> rgbd_ray_lookup_;
   std::vector<Eigen::Vector3f> points_;
   std::vector<uint32_t> colors_;
-  sensor_msgs::LaserScan scan_msg_;
-  sensor_msgs::Image rgb_msg_;
-  sensor_msgs::Image depth_msg_;
-  sensor_msgs::Image heightmap_msg_;
-  sensor_msgs::Imu imu_msg_;
-  sensor_msgs::PointCloud2 cloud_msg_;
-  ros::Publisher costmap_publisher_;
-  ros::Publisher cloud_publisher_;
-  ros::Publisher scan_publisher_;
-  ros::Publisher imu_publisher_;
-  image_transport::Publisher rgb_publisher_;
-  image_transport::Publisher depth_publisher_;
-  image_transport::Publisher heightmap_publisher_;
-  image_transport::ImageTransport image_transport_;
+  sensor_msgs::msg::LaserScan scan_msg_;
+  sensor_msgs::msg::CompressedImage rgb_msg_;
+  sensor_msgs::msg::Image depth_msg_;
+  sensor_msgs::msg::Image heightmap_msg_;
+  sensor_msgs::msg::Imu imu_msg_;
+  sensor_msgs::msg::PointCloud2 cloud_msg_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr costmap_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr rgb_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_publisher_;
+  rclcpp::Node::SharedPtr node_;
+  int rgb_width_ = 0;
+  int rgb_height_ = 0;
   // Translation component of extrinsics.
   Eigen::Vector3f ext_translation_;
-  ros::Time boot_timestamp_;
+  rclcpp::Time boot_timestamp_;
 };
 
 int main(int argc, char* argv[]) {
@@ -433,9 +457,22 @@ int main(int argc, char* argv[]) {
   google::ParseCommandLineFlags(&argc, &argv, false);
   FLAGS_logtostderr = true;
   FLAGS_colorlogtostderr = true;
-  config_reader::ConfigReader reader({FLAGS_config_file});
-  ros::init(argc, argv, "k4a_ros");
-  ros::NodeHandle n;
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<rclcpp::Node>("k4a_ros");
+  std::string config_file = FLAGS_config_file;
+  if (!config_file.empty() && config_file[0] != '/') {
+    try {
+      config_file =
+          ament_index_cpp::get_package_share_directory("k4a_ros") + "/" + config_file;
+    } catch (const std::exception& e) {
+      RCLCPP_WARN(
+          node->get_logger(),
+          "Failed to resolve package share config path for '%s': %s",
+          FLAGS_config_file.c_str(),
+          e.what());
+    }
+  }
+  config_reader::ConfigReader reader({config_file});
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
 
   switch (FLAGS_resolution) {
@@ -478,17 +515,15 @@ int main(int argc, char* argv[]) {
   }
 
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  if (FLAGS_depth) {
-    config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
-  } else {
-    config.depth_mode = K4A_DEPTH_MODE_OFF;
-  }
+  // Depth frames are always required for lidar/scan conversion.
+  config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
   config.synchronized_images_only = false;
-  DepthToLidar interface(n, CONFIG_serial, config);
+  DepthToLidar interface(node, CONFIG_serial, config);
 
-  while (ros::ok()) {
+  while (rclcpp::ok()) {
     interface.Capture();
-    ros::spinOnce();
+    rclcpp::spin_some(node);
   }
+  rclcpp::shutdown();
   return 0;
 }

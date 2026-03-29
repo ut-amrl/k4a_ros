@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>k4a_ros</name>
+  <version>0.0.0</version>
+  <description>Azure Kinect ROS2 driver utilities.</description>
+  <maintainer email="joydeepb@cs.utexas.edu">Joydeep Biswas</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>ament_index_cpp</depend>
+  <depend>amrl_shared_lib</depend>
+  <depend>config_reader</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

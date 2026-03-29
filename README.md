@@ -6,11 +6,11 @@ Azure Kinect ROS drivers
 
 ## Dependencies
 
-1. Lua5.1, glog, gflags, tcmalloc, CImg
+1. Lua5.2, glog, gflags, tcmalloc, CImg
     ```
-    sudo apt install liblua5.1-0-dev libgflags-dev libgoogle-glog-dev libgoogle-perftools-dev cimg-dev
+    sudo apt install liblua5.2-dev libgflags-dev libgoogle-glog-dev libgoogle-perftools-dev cimg-dev
     ```
-2. [ROS](https://wiki.ros.org/Installation/), [AMRL ROS Messages](https://github.com/ut-amrl/amrl_msgs)
+2. [ROS 2](https://docs.ros.org/en/humble/Installation.html)
 3. [Microsoft Kinect For Azure SDK](https://docs.microsoft.com/en-us/azure/kinect-dk/sensor-sdk-download)  
     If installing on \*buntu 18.04, you can follow the instructions as is.  
     If installing on \*buntu 20.04, you will need to manually add the repo for 18.04 instead as follows in `/etc/apt/sources.list`:
@@ -30,35 +30,31 @@ Azure Kinect ROS drivers
 6. (Optional) To use microphone array, install the [audio_common](https://wiki.ros.org/audio_common/Tutorials/Streaming%20audio) ros package according to the tutorial. At this point, you can go to audio system settings and verify the Azure Kinect microphone is connected.
 
 ## Compile
-1. Add it to your `ROS_PACKAGE_PATH` environment variable:
-    ```
-    export ROS_PACKAGE_PATH=`pwd`:$ROS_PACKAGE_PATH
-    ```
+Build with colcon from your ROS 2 workspace root:
+```
+colcon build --packages-select k4a_ros
+```
 
-2. Run `make [-j]`
+Then source the workspace:
+```
+source install/setup.bash
+```
 
 ## Usage
 The streamed topics will be available on the Fixed Frame `kinect` on rviz by default.
 
-To stream just converted laserscan data :
+To stream just converted laserscan data:
 ```
-./bin/depth_to_lidar --points=false
+ros2 run k4a_ros depth_to_lidar --points=false
 ```
 
 To stream converted laserscan data and a 3D point cloud:
 ```
-./bin/depth_to_lidar --points=true
+ros2 run k4a_ros depth_to_lidar --points=true
 ```
 
-To stream an RGB point cloud as `sensor_msgs/PointCloud2`:
-```
-./bin/stream_pcl
-```
-
-To save registered color and RGB images to disk (e.g. to the directory `out`):
-```
-./bin/save_rgbd_images --save_dir out
-```
+RGB images are published as `sensor_msgs/msg/CompressedImage` and depth images
+are published as raw `sensor_msgs/msg/Image`.
 
 ## libusb errors
 If you encounter an issue with the libusb driver, it may be due to the data bus limit on the usb port not being set to a high enough value. If this is the case, open the grub file (/etc/default/grub) and replace the line `GRUB_CMDLINE_LINUX_DEFAULT=quiet splash` with `GRUB_CMDLINE_LINUX_DEFAULT=quiet splash usbcore.usbfs_memory_mb=2000`. Then, run `sudo update-grub` and reboot the system after updating grub.

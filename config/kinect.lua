@@ -1,7 +1,7 @@
 serial = "";
 costmap_topic = "kinect_costmap";
 points_topic = "kinect_points";
-rgb_image_topic = "camera/rgb/image_raw";
+rgb_image_topic = "camera/rgb/image_raw/compressed";
 depth_image_topic = "camera/depth/image_raw";
 rgb_image_frame = "kinect_color";
 depth_image_frame = "kinect_depth";
@@ -13,7 +13,7 @@ registered_rgbd = true;
 
 rotation = {
   yaw = 0;
-  pitch = 15;
+  pitch = 0;
   roll = 0;
 };
 
