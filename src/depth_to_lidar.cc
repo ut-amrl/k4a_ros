@@ -79,6 +79,7 @@ builtin_interfaces::msg::Time ToBuiltinTime(const rclcpp::Time& t) {
 DECLARE_int32(v);
 DEFINE_bool(depth, false, "Publish depth images");
 DEFINE_bool(points, false, "Publish point cloud");
+DEFINE_bool(scan, false, "Publish laser scan");
 DEFINE_bool(rgb, true, "Publish color images");
 DEFINE_bool(imu, true, "Publish IMU data");
 DEFINE_string(config_file, "config/kinect.lua", "Name of config file to use");
@@ -392,9 +393,14 @@ class DepthToLidar : public K4AWrapper {
     }
 
     if (depth_image == nullptr) return;
-    // Scan generation depends on projected 3D points, even if cloud publishing is disabled.
-    DepthToPointCloud(color_image, depth_image);
-    PublishScan(stamp_time);
+
+    if (FLAGS_depth || FLAGS_points) {
+      DepthToPointCloud(color_image, depth_image);
+    }
+
+    if (FLAGS_scan) {
+      PublishScan(stamp_time);
+    }
     if (FLAGS_depth) {
       // TODO consider publishing camera info also with same timestamp
       PublishDepthImage(depth_image, stamp_time);
