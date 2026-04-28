@@ -26,7 +26,7 @@
 #include "glog/logging.h"
 // #include "eigen3/Eigen/Dense"
 // #include "eigen3/Eigen/Geometry"
-#include "shared/util/timer.h"
+// #include "shared/util/timer.h"
 #include "processing_kernels.h"
 
 #include <thrust/copy.h>

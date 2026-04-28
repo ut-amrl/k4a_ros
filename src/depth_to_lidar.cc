@@ -40,6 +40,7 @@
 #include "builtin_interfaces/msg/time.hpp"
 #include "sensor_msgs/image_encodings.hpp"
 #include "sensor_msgs/msg/compressed_image.hpp"
+#include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -91,6 +92,8 @@ CONFIG_STRING(costmap_topic, "costmap_topic");
 CONFIG_STRING(points_topic, "points_topic");
 CONFIG_STRING(rgb_topic, "rgb_image_topic");
 CONFIG_STRING(depth_topic, "depth_image_topic");
+CONFIG_STRING(rgb_camera_info_topic, "rgb_camera_info_topic");
+CONFIG_STRING(depth_camera_info_topic, "depth_camera_info_topic");
 CONFIG_STRING(rgb_frame, "rgb_image_frame");
 CONFIG_STRING(depth_frame, "depth_image_frame");
 CONFIG_STRING(scan_topic, "scan_topic");
@@ -135,8 +138,36 @@ class DepthToLidar : public K4AWrapper {
         CONFIG_rgb_topic, 1);
     depth_publisher_ = node_->create_publisher<sensor_msgs::msg::Image>(
         CONFIG_depth_topic, 1);
+    rgb_camera_info_publisher_ =
+        node_->create_publisher<sensor_msgs::msg::CameraInfo>(
+            CONFIG_rgb_camera_info_topic, 1);
+    depth_camera_info_publisher_ =
+        node_->create_publisher<sensor_msgs::msg::CameraInfo>(
+            CONFIG_depth_camera_info_topic, 1);
     InitMessages();
     InitLookups();
+  }
+
+  void InitCameraIntrinsics(
+      sensor_msgs::msg::CameraInfo* msg,
+      const k4a_calibration_camera_t& camera_calibration,
+      const std::string& frame_id) {
+    const auto& intrinsics = camera_calibration.intrinsics.parameters.param;
+    msg->header.frame_id = frame_id;
+    msg->width = camera_calibration.resolution_width;
+    msg->height = camera_calibration.resolution_height;
+    msg->distortion_model = "rational_polynomial";
+    msg->d = {intrinsics.k1, intrinsics.k2, intrinsics.p1, intrinsics.p2,
+              intrinsics.k3, intrinsics.k4, intrinsics.k5, intrinsics.k6};
+    msg->k = {intrinsics.fx, 0.0, intrinsics.cx,
+              0.0, intrinsics.fy, intrinsics.cy,
+              0.0, 0.0, 1.0};
+    msg->r = {1.0, 0.0, 0.0,
+              0.0, 1.0, 0.0,
+              0.0, 0.0, 1.0};
+    msg->p = {intrinsics.fx, 0.0, intrinsics.cx, 0.0,
+              0.0, intrinsics.fy, intrinsics.cy, 0.0,
+              0.0, 0.0, 1.0, 0.0};
   }
 
   void InitMessages() {
@@ -167,6 +198,14 @@ class DepthToLidar : public K4AWrapper {
     depth_msg_.height = height;
     depth_msg_.step = depth_msg_.width * sizeof(uint16_t);
     depth_msg_.data.resize(depth_msg_.step * depth_msg_.height);
+    InitCameraIntrinsics(
+        &rgb_camera_info_msg_,
+        calibration_.color_camera_calibration,
+        CONFIG_rgb_frame);
+    InitCameraIntrinsics(
+        &depth_camera_info_msg_,
+        calibration_.depth_camera_calibration,
+        CONFIG_depth_frame);
 
     cloud_msg_.fields.resize(4);
     cloud_msg_.point_step = 3 * sizeof(float) + sizeof(uint32_t);
@@ -350,6 +389,16 @@ class DepthToLidar : public K4AWrapper {
     depth_publisher_->publish(depth_msg_);
   }
 
+  void PublishRGBCameraInfo(const rclcpp::Time& stamp) {
+    rgb_camera_info_msg_.header.stamp = ToBuiltinTime(stamp);
+    rgb_camera_info_publisher_->publish(rgb_camera_info_msg_);
+  }
+
+  void PublishDepthCameraInfo(const rclcpp::Time& stamp) {
+    depth_camera_info_msg_.header.stamp = ToBuiltinTime(stamp);
+    depth_camera_info_publisher_->publish(depth_camera_info_msg_);
+  }
+
   void PublishHeightMap() {
   }
 
@@ -384,8 +433,8 @@ class DepthToLidar : public K4AWrapper {
   void RGBDCallback(k4a_image_t color_image, k4a_image_t depth_image) {
     rclcpp::Time stamp_time = node_->get_clock()->now();
     if (color_image != nullptr && FLAGS_rgb) {
-      // TODO consider publishing camera info also with same timestamp
       PublishRGBImage(color_image, stamp_time);
+      PublishRGBCameraInfo(stamp_time);
     } else {
       if (color_image == nullptr) {
         RCLCPP_WARN(node_->get_logger(), "Color image is null");
@@ -402,8 +451,8 @@ class DepthToLidar : public K4AWrapper {
       PublishScan(stamp_time);
     }
     if (FLAGS_depth) {
-      // TODO consider publishing camera info also with same timestamp
       PublishDepthImage(depth_image, stamp_time);
+      PublishDepthCameraInfo(stamp_time);
     }
     if (FLAGS_points) {
       PublishPointCloud(stamp_time);
@@ -413,8 +462,8 @@ class DepthToLidar : public K4AWrapper {
   void ColorCallback(k4a_image_t image) override {
     rclcpp::Time stamp_time = node_->get_clock()->now();
     if (image != nullptr && FLAGS_rgb) {
-      // TODO consider publishing camera info also with same timestamp
       PublishRGBImage(image, stamp_time);
+      PublishRGBCameraInfo(stamp_time);
     }
   }
 
@@ -440,6 +489,8 @@ class DepthToLidar : public K4AWrapper {
   std::vector<uint32_t> colors_;
   sensor_msgs::msg::LaserScan scan_msg_;
   sensor_msgs::msg::CompressedImage rgb_msg_;
+  sensor_msgs::msg::CameraInfo rgb_camera_info_msg_;
+  sensor_msgs::msg::CameraInfo depth_camera_info_msg_;
   sensor_msgs::msg::Image depth_msg_;
   sensor_msgs::msg::Image heightmap_msg_;
   sensor_msgs::msg::Imu imu_msg_;
@@ -450,6 +501,10 @@ class DepthToLidar : public K4AWrapper {
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr rgb_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr
+      rgb_camera_info_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr
+      depth_camera_info_publisher_;
   rclcpp::Node::SharedPtr node_;
   int rgb_width_ = 0;
   int rgb_height_ = 0;

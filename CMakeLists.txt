@@ -65,6 +65,49 @@ install(TARGETS depth_to_lidar
   DESTINATION lib/${PROJECT_NAME}
 )
 
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+  enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD 14)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  find_package(CUDAToolkit REQUIRED)
+
+  add_executable(cuda_depth_to_lidar
+    src/cuda_depth_to_lidar.cc
+    src/k4a_wrapper.cc
+    src/processing_kernels_cuda.cu
+  )
+
+  ament_target_dependencies(cuda_depth_to_lidar
+    ament_index_cpp
+    amrl_shared_lib
+    config_reader
+    rclcpp
+    sensor_msgs
+  )
+
+  target_link_libraries(cuda_depth_to_lidar
+    CUDA::cudart
+    pthread
+    boost_system
+    ${LUA_LIBRARIES}
+    rt
+    glog
+    k4a
+    gflags
+    X11
+    ${OpenCV_LIBS}
+    ${BUILD_SPECIFIC_LIBRARIES}
+  )
+
+  install(TARGETS cuda_depth_to_lidar
+    DESTINATION lib/${PROJECT_NAME}
+  )
+else()
+  message(WARNING "CUDA compiler not found: cuda_depth_to_lidar will not be built")
+endif()
+
 install(DIRECTORY config
   DESTINATION share/${PROJECT_NAME}
 )
