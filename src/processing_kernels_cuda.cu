@@ -172,12 +172,15 @@ void GetCudaCapabilities() {
     //    prop.maxBlocksPerMultiProcessor);
     printf("  Multiprocessor count: %d\n", prop.multiProcessorCount);
     
+    // memoryClockRate was removed from cudaDeviceProp in CUDA 13.
+    int memory_clock_khz = 0;
+    cudaDeviceGetAttribute(&memory_clock_khz, cudaDevAttrMemoryClockRate, i);
     printf("  Memory Clock Rate (KHz): %d\n",
-           prop.memoryClockRate);
+           memory_clock_khz);
     printf("  Memory Bus Width (bits): %d\n",
            prop.memoryBusWidth);
     printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
-           2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
+           2.0*memory_clock_khz*(prop.memoryBusWidth/8)/1.0e6);
   }
 }
 }  // namespace processing_kernels
